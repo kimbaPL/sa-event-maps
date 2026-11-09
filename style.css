@@ -2656,6 +2656,21 @@ textarea {
     color: #a9b5c1;
 }
 
+.admin-role-badge.is-owner {
+    border-color: rgba(237, 85, 85, 0.48);
+    background: rgba(237, 85, 85, 0.12);
+    color: #ff7777;
+    box-shadow: 0 0 0 1px rgba(237, 85, 85, 0.06);
+}
+
+.admin-users-table tbody tr.is-owner {
+    background: rgba(237, 85, 85, 0.025);
+}
+
+.admin-users-table tbody tr.is-owner:hover {
+    background: rgba(237, 85, 85, 0.055);
+}
+
 .admin-date-cell {
     min-width: 130px;
     white-space: nowrap;

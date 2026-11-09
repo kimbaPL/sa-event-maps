@@ -49,7 +49,7 @@ The UI must not write directly to localStorage.
 
         const { data: profile, error: profileError } = await supabase
             .from("profiles")
-            .select("id, display_name, role")
+            .select("id, display_name, role, is_owner")
             .eq("id", user.id)
             .maybeSingle();
 
@@ -66,7 +66,8 @@ The UI must not write directly to localStorage.
             email: user.email || "",
             displayName: profile.display_name || user.email || "Gracz",
             role: profile.role || "player",
-            isAdmin: profile.role === "admin"
+            isAdmin: profile.role === "admin",
+            isOwner: Boolean(profile.is_owner)
         };
 
         window.saEventMapsUser = context;

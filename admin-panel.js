@@ -177,6 +177,10 @@ with a direct table request.
             const row = document.createElement("tr");
             row.dataset.userId = user.user_id;
 
+            if (user.is_owner) {
+                row.classList.add("is-owner");
+            }
+
             const nameCell = createCell("admin-user-name-cell");
             const name = document.createElement("strong");
             name.textContent = user.display_name || "Gracz";
@@ -206,12 +210,19 @@ with a direct table request.
 
             const roleCell = createCell();
             const roleBadge = document.createElement("span");
-            roleBadge.className = user.role === "admin"
-                ? "admin-role-badge is-admin"
-                : "admin-role-badge is-player";
-            roleBadge.textContent = user.role === "admin"
-                ? "Administrator"
-                : "Gracz";
+            roleBadge.className = user.is_owner
+                ? "admin-role-badge is-owner"
+                : user.role === "admin"
+                    ? "admin-role-badge is-admin"
+                    : "admin-role-badge is-player";
+            roleBadge.textContent = user.is_owner
+                ? "Właściciel"
+                : user.role === "admin"
+                    ? "Administrator"
+                    : "Gracz";
+            if (user.is_owner) {
+                roleBadge.title = "Stałe konto właściciela projektu SA Event Maps";
+            }
             roleCell.appendChild(roleBadge);
 
             const createdCell = createCell("admin-date-cell");
@@ -230,7 +241,11 @@ with a direct table request.
             actionButton.dataset.userId = user.user_id;
             actionButton.dataset.nextRole = user.role === "admin" ? "player" : "admin";
 
-            if (currentUser?.id === user.user_id) {
+            if (user.is_owner) {
+                actionButton.disabled = true;
+                actionButton.textContent = "Właściciel projektu";
+                actionButton.title = "To konto ma stałe uprawnienia właściciela i nie można odebrać mu rangi administratora.";
+            } else if (currentUser?.id === user.user_id) {
                 actionButton.disabled = true;
                 actionButton.textContent = "Twoje konto";
                 actionButton.title = "Nie można odebrać rangi administratora własnemu kontu.";
@@ -303,6 +318,11 @@ with a direct table request.
 
         if (!target) {
             setStatus("Nie znaleziono użytkownika na aktualnej liście. Odśwież ją.", "error");
+            return;
+        }
+
+        if (target.is_owner && nextRole !== "admin") {
+            setStatus("Nie można odebrać rangi właścicielowi projektu SA Event Maps.", "error");
             return;
         }
 

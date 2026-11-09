@@ -1,46 +1,54 @@
-SA EVENT MAPS — PANEL ADMINISTRACYJNY (ETAP 1)
+SA EVENT MAPS — OCHRONA WŁAŚCICIELA PROJEKTU
 
-ZAWARTOSC PACZKI
+USTALENIE
+Pierwsze konto utworzone w Supabase Auth jest stałym właścicielem projektu.
+Właściciel zachowuje rolę administratora. W panelu jego ranga ma czerwone
+oznaczenie „Właściciel”, podczas gdy administratorzy pozostają zieloni,
+a gracze szarzy.
+
+PLIKI DO ZASTĄPIENIA
 - index.html
-  Pełny plik z dodatkową pozycją „Panel administracyjny” i sekcją zarządzania użytkownikami.
 - style.css
-  Pełny plik z wyglądem tabeli użytkowników i panelu.
-- scripts/build.mjs
-  Pełny skrypt budowania; dodaje admin-panel.js do publikowanych zasobów.
 - admin-panel.js
-  Nowy moduł interfejsu listy użytkowników i zmiany rang.
-- supabase/migrations/20261109221500_admin_user_management.sql
-  Nowa migracja z dwiema zabezpieczonymi funkcjami PostgreSQL.
+- supabase-data.js
 
-INSTALACJA PLIKOW
-1. Zamknij lokalny serwer podglądu i edytory otwarte w folderze projektu.
-2. Zrób świeżą kopię całego aktualnego folderu projektu.
-3. Rozpakuj paczkę bezpośrednio do głównego folderu projektu.
-4. Zezwól na zastąpienie istniejących plików, gdy system o to zapyta.
-5. Nowy plik admin-panel.js i nowa migracja SQL powinny zostać dodane w podanych ścieżkach.
+NOWA MIGRACJA
+- supabase/migrations/20261109233000_protect_project_owner.sql
+
+CO ZMIENIA MIGRACJA
+- Dodaje kolumnę profiles.is_owner (bez tworzenia nowej tabeli).
+- Wybiera najstarsze istniejące konto auth.users według created_at; przy remisie
+  stosuje UUID jako deterministyczne rozstrzygnięcie.
+- Przywraca temu kontu role='admin' i ustawia is_owner=true.
+- Pozostałym kontom nie zmienia ról.
+- Wymusza warunek: konto oznaczone jako właściciel zawsze musi mieć role='admin'.
+- Wymusza maksymalnie jednego właściciela indeksem unikalnym.
+- Rozszerza admin_list_users() o flagę is_owner.
+- Blokuje w admin_set_user_role() próbę odebrania rangi właścicielowi.
+- Odbiera rolom anon i authenticated możliwość aktualizacji kolumny is_owner.
+
+KOLEJNOŚĆ WDROŻENIA
+1. Zachowaj aktualną kopię projektu — nie usuwaj dotychczasowych kopii.
+2. W Supabase SQL Editor uruchom najpierw zapytanie kontrolne z rozmowy.
+   Sprawdź, czy najstarsze konto auth.users to Twoje pierwsze, główne konto.
+   Nie uruchamiaj migracji, dopóki nie potwierdzisz tej zgodności.
+3. Rozpakuj paczkę do głównego folderu projektu i zastąp wskazane pliki.
+4. W PowerShell uruchom: node --check .\admin-panel.js
+5. Uruchom: node --check .\supabase-data.js
+6. Uruchom: node .\scripts\build.mjs
+7. Sprawdź Git i wykonaj `npx.cmd supabase db push --dry-run --remote`.
+8. Kontynuuj wyłącznie wtedy, gdy jedyną oczekującą migracją jest
+   20261109233000_protect_project_owner.sql.
+9. Zastosuj migrację przez `npx.cmd supabase db push --remote`.
+10. Zweryfikuj is_owner i role w profiles oraz zaktualizowane funkcje.
+11. Dopiero wtedy wykonaj git add, commit i push. Cloudflare wdroży frontend.
+12. Po wdrożeniu odśwież stronę przez Ctrl+F5 i sprawdź czerwone oznaczenie
+    właściciela oraz brak możliwości zmiany jego rangi.
 
 WAŻNE
-- Nie zastępuj app.js, auth.js, supabase-client.js ani supabase-data.js.
-- Nie usuwaj ani nie zmieniaj istniejących migracji.
-- Nie usuwaj danych testowych ani rekordów w Supabase.
-- Nie publikuj nowego frontendu przed zastosowaniem nowej migracji SQL.
-- Migracja nie tworzy nowej tabeli i nie modyfikuje istniejących rekordów. Dodaje tylko dwie funkcje PostgreSQL oraz ich uprawnienia.
-- Funkcja listująca konta zwraca e-maile wyłącznie administratorowi.
-- Funkcja zmiany rangi sprawdza uprawnienia w bazie, blokuje równoczesne zmiany, chroni ostatniego administratora i blokuje samodzielne odebranie sobie rangi.
-
-KOLEJNOSC WDROZENIA
-1. Najpierw skopiuj pliki do projektu.
-2. Następnie zastosuj nową migrację do zdalnego projektu Supabase.
-3. Sprawdź, czy obie funkcje istnieją i mają ograniczone uprawnienia.
-4. Dopiero potem wykonaj build, commit i push do GitHub; Cloudflare opublikuje nowy frontend.
-5. Na końcu sprawdź panel na koncie administratora i upewnij się, że zwykły gracz nie widzi pozycji menu.
-
-Weryfikacja wykonana przed przygotowaniem paczki:
-- składnia JavaScript sprawdzona przez node --check;
-- HTML sprawdzony pod kątem powielonych identyfikatorów;
-- CSS sprawdzony pod kątem parowania nawiasów klamrowych;
-- skrypt build sprawdzony na plikach paczki z tymczasowym zastępczym plikiem obrazu.
-
-Uwaga: właściwy obraz assets/gtasa-map-shadows.jpg nie jest częścią tej paczki aktualizacyjnej.
-Musi pozostać w istniejącym folderze projektu. Nie został dołączony, aby nie nadpisywać
-oryginalnego obrazu mapy.
+- Nie wykonuj db reset.
+- Nie usuwaj kont testowych ani danych projektu.
+- Nie zmieniaj ręcznie UUID konta właściciela.
+- Migracja automatycznie przywróci rangę administratora pierwszemu kontu.
+- Jeśli pierwsze konto w wyniku zapytania kontrolnego nie jest właściwym kontem,
+  przerwij wdrożenie i skontaktuj się przed zastosowaniem migracji.
