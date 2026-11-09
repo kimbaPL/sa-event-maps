@@ -1,0 +1,9 @@
+{
+  "name": "sa-event-maps-beta",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SA Event Maps - Beta",
+  "devDependencies": {
+    "supabase": "^3.0.0"
+  }
+}

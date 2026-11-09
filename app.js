@@ -1,0 +1,2094 @@
+"use strict";
+
+/*
+========================================================
+SA EVENT MAPS
+COMMUNITY COLLECTIBLE CATALOG
+========================================================
+
+DATA SOURCE:
+Supabase (PostgreSQL + RLS)
+
+MAP:
+assets/gtasa-map-shadows.jpg
+
+CALIBRATION:
+4096 x 4096
+
+LOCATION IDENTIFIERS:
+UUIDs are internal only. No visible location numbering.
+
+========================================================
+*/
+
+(() => {
+    // ================================================
+    // 1. CONFIGURATION
+    // ================================================
+
+    const MAP_IMAGE_URL = "assets/gtasa-map-shadows.jpg";
+    const IMAGE_WIDTH = 4096;
+    const IMAGE_HEIGHT = 4096;
+
+    const GRID_SPACING = 500;
+    const GRID_LIMIT = 3000;
+    const PAN_DISTANCE = 120;
+
+    const CALIBRATION = {
+        gameX: [
+            1.4646995104596296,
+            0.00027169485400127535,
+            -3000.2306191026823
+        ],
+        gameY: [
+            -0.0006535976662411791,
+            -1.4681786449442777,
+            3006.465088839544
+        ]
+    };
+
+    const PROGRESS_STATUS = {
+        not_found: {
+            label: "Nieznaleziona",
+            color: "#e34848"
+        },
+        found: {
+            label: "Znaleziono",
+            color: "#35b779"
+        },
+        not_present: {
+            label: "Nie ma",
+            color: "#242424"
+        },
+        uncertain: {
+            label: "Niepewne",
+            color: "#e9bf39"
+        }
+    };
+
+    // ================================================
+    // 2. DEPENDENCIES AND HTML ELEMENTS
+    // ================================================
+
+    const byId = id => document.getElementById(id);
+    const supabase = window.supabaseClient;
+    const dataApi = window.saEventMapsData;
+    const mapElement = byId("game-map");
+    const appShell = document.querySelector(".app-shell");
+
+    if (!mapElement || !appShell) {
+        console.error("SA Event Maps: Brakuje głównego kontenera aplikacji.");
+        return;
+    }
+
+    if (typeof L === "undefined") {
+        mapElement.textContent =
+            "Nie udało się załadować Leaflet. Sprawdź połączenie z internetem.";
+        return;
+    }
+
+    if (!supabase || !dataApi) {
+        mapElement.textContent =
+            "Nie udało się uruchomić połączenia z Supabase. Odśwież stronę.";
+        console.error("SA Event Maps: Brak klienta lub warstwy danych Supabase.");
+        return;
+    }
+
+    if (mapElement.dataset.initialized === "true") {
+        return;
+    }
+
+    mapElement.dataset.initialized = "true";
+
+    const elements = {
+        storageStatus: byId("storage-status"),
+
+        exportButton: byId("export-locations"),
+        importButton: byId("import-locations"),
+        importFile: byId("import-file"),
+
+        globalLocationCount: byId("global-location-count"),
+        globalEventCount: byId("global-event-count"),
+
+        eventFilter: byId("event-filter"),
+        createEvent: byId("create-event"),
+        editEvent: byId("edit-event"),
+        deleteEvent: byId("delete-event"),
+
+        eventEditor: byId("event-editor"),
+        eventEditorTitle: byId("event-editor-title"),
+        eventName: byId("event-name"),
+        eventDescription: byId("event-description"),
+        eventStart: byId("event-start"),
+        eventEnd: byId("event-end"),
+        eventOfficialCount: byId("event-official-count"),
+
+        saveEvent: byId("save-event"),
+        cancelEvent: byId("cancel-event"),
+        eventEditorStatus: byId("event-editor-status"),
+
+        assignEventSelect: byId("assign-event-select"),
+        assignLocation: byId("assign-selected-location"),
+        removeAssignment: byId("remove-event-assignment"),
+
+        locationCount: byId("location-count"),
+
+        toggleGrid: byId("toggle-grid"),
+        gridStatus: byId("grid-status"),
+        resetMap: byId("reset-map"),
+
+        readoutX: byId("map-coordinate-x"),
+        readoutY: byId("map-coordinate-y"),
+        useCoordinates: byId("use-map-coordinates"),
+        coordinateStatus: byId("map-coordinate-status"),
+
+        emptyDetails: byId("pin-details"),
+        selectedDetails: byId("pin-details-content"),
+
+        selectedName: byId("selected-pin-name"),
+        selectedDescription: byId("selected-pin-description"),
+        selectedStatus: byId("pin-status"),
+        selectedEvents: byId("selected-pin-events"),
+
+        deleteSelected: byId("delete-selected-pin"),
+
+        addPin: byId("add-pin"),
+        clearForm: byId("clear-pin-form"),
+        editorStatus: byId("pin-editor-status"),
+
+        locationSearch: byId("location-search"),
+        locationSort: byId("location-sort"),
+        catalogList: byId("catalog-list"),
+        catalogLocationCount: byId("catalog-location-count"),
+        catalogStatus: byId("catalog-status")
+    };
+
+    const form = {
+        name: document.querySelector(".pin-editor #pin-name"),
+        area: document.querySelector(".pin-editor #pin-area"),
+        x: document.querySelector(".pin-editor #pin-x"),
+        y: document.querySelector(".pin-editor #pin-y"),
+        z: document.querySelector(".pin-editor #pin-z"),
+        description: document.querySelector(".pin-editor #pin-description")
+    };
+
+    const detailFields = {
+        area: byId("selected-pin-area"),
+        x: byId("selected-pin-x"),
+        y: byId("selected-pin-y"),
+        z: byId("selected-pin-z")
+    };
+
+    const requiredElements = [
+        ...Object.values(elements),
+        ...Object.values(form),
+        ...Object.values(detailFields)
+    ];
+
+    if (requiredElements.some(element => !element)) {
+        console.error("SA Event Maps: Brakuje elementów interfejsu. Sprawdź index.html.");
+        mapElement.textContent =
+            "Nie udało się uruchomić aplikacji. Sprawdź zgodność plików.";
+        return;
+    }
+
+    // ================================================
+    // 3. APPLICATION STATE
+    // ================================================
+
+    const database = {
+        locations: [],
+        events: [],
+        eventLocations: [],
+        categories: [],
+        playerProgress: []
+    };
+
+    let currentUser = null;
+    let selectedLocationId = null;
+    let selectedMapCoordinate = null;
+    let currentFilterId = "all";
+    let editingEventId = null;
+    let editingLocationId = null;
+
+    let imageWidth = 0;
+    let imageHeight = 0;
+    let imageBounds = null;
+    let mapReady = false;
+    let dataReady = false;
+
+    let gridLayer = null;
+    let gridVisible = false;
+    let bootstrapPromise = null;
+
+    // ================================================
+    // 4. SMALL HELPERS
+    // ================================================
+
+    function formatCoordinate(value) {
+        return Number(value).toFixed(3);
+    }
+
+    function escapeHTML(value) {
+        return String(value ?? "").replace(/[&<>"']/g, character => ({
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            '"': "&quot;",
+            "'": "&#039;"
+        })[character]);
+    }
+
+    function setEditorStatus(message) {
+        elements.editorStatus.textContent = String(message ?? "");
+    }
+
+    function setCoordinateStatus(message) {
+        elements.coordinateStatus.textContent = String(message ?? "");
+    }
+
+    function setCatalogStatus(message) {
+        elements.catalogStatus.textContent = String(message ?? "");
+    }
+
+    function updateStorageStatus(message, success = true) {
+        elements.storageStatus.textContent = message;
+
+        const dot = document.querySelector(".sidebar-footer .status-dot");
+        if (dot) {
+            dot.style.background = success ? "#65d6a3" : "#ed7777";
+        }
+    }
+
+    function isAdmin() {
+        return currentUser?.role === "admin";
+    }
+
+    function getLocationById(locationId) {
+        return database.locations.find(item => item.id === locationId) || null;
+    }
+
+    function getEventById(eventId) {
+        return database.events.find(item => item.id === eventId) || null;
+    }
+
+    function getEventLocation(eventId, locationId) {
+        return database.eventLocations.find(
+            item => item.eventId === eventId && item.locationId === locationId
+        ) || null;
+    }
+
+    function locationBelongsToEvent(locationId, eventId) {
+        return Boolean(getEventLocation(eventId, locationId));
+    }
+
+    function getEventsForLocation(locationId) {
+        const eventIds = new Set(
+            database.eventLocations
+                .filter(item => item.locationId === locationId)
+                .map(item => item.eventId)
+        );
+
+        return database.events.filter(event => eventIds.has(event.id));
+    }
+
+    function getLocationsForEvent(eventId) {
+        const ids = new Set(
+            database.eventLocations
+                .filter(item => item.eventId === eventId)
+                .map(item => item.locationId)
+        );
+
+        return database.locations.filter(location => ids.has(location.id));
+    }
+
+    function getProgress(eventId, locationId) {
+        return database.playerProgress.find(
+            item =>
+                item.userId === currentUser?.id &&
+                item.eventId === eventId &&
+                item.locationId === locationId
+        ) || {
+            userId: currentUser?.id || null,
+            eventId,
+            locationId,
+            status: "not_found",
+            needsCheck: false
+        };
+    }
+
+    function getProgressContextEventId() {
+        if (currentFilterId !== "all") {
+            return currentFilterId;
+        }
+
+        return elements.assignEventSelect.value || null;
+    }
+
+    function getFoundCountForEvent(eventId) {
+        const assignedLocationIds = new Set(
+            database.eventLocations
+                .filter(item => item.eventId === eventId)
+                .map(item => item.locationId)
+        );
+
+        return database.playerProgress.filter(
+            item =>
+                item.eventId === eventId &&
+                item.status === "found" &&
+                assignedLocationIds.has(item.locationId)
+        ).length;
+    }
+
+    function canEditLocation(location) {
+        if (!location || location.isArchived) return false;
+        if (isAdmin()) return true;
+
+        return (
+            !location.isPinned &&
+            location.createdBy === currentUser?.id
+        );
+    }
+
+    function canMoveLocation(location) {
+        return (
+            canEditLocation(location) &&
+            !location.isPinned &&
+            !location.isArchived
+        );
+    }
+
+    function getVisibleLocations() {
+        const available = database.locations.filter(
+            location => !location.isArchived || isAdmin()
+        );
+
+        if (currentFilterId === "all") {
+            return available;
+        }
+
+        return available.filter(location =>
+            locationBelongsToEvent(location.id, currentFilterId)
+        );
+    }
+
+    function updateGlobalCounters() {
+        elements.globalLocationCount.textContent =
+            database.locations.filter(item => !item.isArchived).length;
+
+        elements.globalEventCount.textContent =
+            database.events.filter(item => item.status !== "archived").length;
+    }
+
+    // ================================================
+    // 5. COORDINATE CONVERSION
+    // ================================================
+
+    function pixelToWorld(pixelX, pixelY) {
+        return {
+            x:
+                CALIBRATION.gameX[0] * pixelX +
+                CALIBRATION.gameX[1] * pixelY +
+                CALIBRATION.gameX[2],
+            y:
+                CALIBRATION.gameY[0] * pixelX +
+                CALIBRATION.gameY[1] * pixelY +
+                CALIBRATION.gameY[2]
+        };
+    }
+
+    function worldToPixel(worldX, worldY) {
+        const a = CALIBRATION.gameX[0];
+        const b = CALIBRATION.gameX[1];
+        const c = CALIBRATION.gameX[2];
+        const d = CALIBRATION.gameY[0];
+        const e = CALIBRATION.gameY[1];
+        const f = CALIBRATION.gameY[2];
+
+        const determinant = a * e - b * d;
+
+        if (Math.abs(determinant) < 1e-15) {
+            throw new Error("Nie można odwrócić kalibracji.");
+        }
+
+        const dx = worldX - c;
+        const dy = worldY - f;
+
+        return {
+            x: (e * dx - b * dy) / determinant,
+            y: (-d * dx + a * dy) / determinant
+        };
+    }
+
+    function worldToLatLng(worldX, worldY) {
+        const pixel = worldToPixel(worldX, worldY);
+
+        if (!isPixelInsideImage(pixel.x, pixel.y)) {
+            return null;
+        }
+
+        return [
+            imageHeight - pixel.y,
+            pixel.x
+        ];
+    }
+
+    function isPixelInsideImage(x, y) {
+        return (
+            Number.isFinite(x) &&
+            Number.isFinite(y) &&
+            x >= 0 &&
+            x <= imageWidth &&
+            y >= 0 &&
+            y <= imageHeight
+        );
+    }
+
+    function parseOptionalNumber(value) {
+        const text = String(value).trim();
+
+        if (text === "") return null;
+
+        const parsed = Number(text);
+        return Number.isFinite(parsed) ? parsed : NaN;
+    }
+
+    // ================================================
+    // 6. REFERENCE POINTS (TEMPORARY)
+    // ================================================
+
+    // These four reference points are temporary calibration aids.
+    // Remove them before the public release, after final calibration verification.
+
+    const referencePins = [
+        {
+            id: "P1",
+            name: "Punkt kontrolny — San Fierro",
+            world: { x: -2705.664, y: 376.153, z: 4.968 }
+        },
+        {
+            id: "P2",
+            name: "Punkt kontrolny — Las Venturas",
+            world: { x: 1088.348, y: 1073.993, z: 11 }
+        },
+        {
+            id: "P3",
+            name: "Punkt kontrolny — Los Santos",
+            world: { x: 1479.507, y: -1694.678, z: 14.047 }
+        },
+        {
+            id: "P4",
+            name: "Punkt kontrolny — Blueberry",
+            world: { x: 217.733, y: 11.723, z: 2.571 }
+        }
+    ];
+
+    // ================================================
+    // 7. DYNAMIC DETAIL CONTROLS
+    // ================================================
+
+    let progressPanel = null;
+    let progressSelect = null;
+    let needsCheckInput = null;
+    let editLocationButton = null;
+    let pinLocationButton = null;
+
+    function ensureProgressPanel() {
+        if (progressPanel) return;
+
+        progressPanel = document.createElement("section");
+        progressPanel.className = "progress-editor";
+        progressPanel.innerHTML = `
+            <div class="eyebrow">POSTĘP W WYDARZENIU</div>
+            <div class="progress-context" id="progress-context-label">
+                Wybierz wydarzenie, aby zmienić status.
+            </div>
+            <div class="form-field">
+                <label for="progress-status-select">STATUS ZNAJDŹKI</label>
+                <select id="progress-status-select">
+                    <option value="not_found">Nieznaleziona</option>
+                    <option value="found">Znaleziono</option>
+                    <option value="not_present">Nie ma</option>
+                    <option value="uncertain">Niepewne</option>
+                </select>
+            </div>
+            <label class="needs-check-control" for="progress-needs-check">
+                <input id="progress-needs-check" type="checkbox">
+                <span>Do sprawdzenia</span>
+            </label>
+            <div class="progress-help" id="progress-help">
+                Status jest indywidualny dla Ciebie i wybranego wydarzenia.
+            </div>
+        `;
+
+        const detailsData = elements.selectedDetails.querySelector(".details-data");
+        const eventAssignment = elements.selectedDetails.querySelector(".event-assignment");
+
+        if (detailsData && eventAssignment) {
+            elements.selectedDetails.insertBefore(progressPanel, eventAssignment);
+        } else {
+            elements.selectedDetails.appendChild(progressPanel);
+        }
+
+        progressSelect = byId("progress-status-select");
+        needsCheckInput = byId("progress-needs-check");
+
+        progressSelect.addEventListener("change", () => {
+            void saveSelectedProgress();
+        });
+
+        needsCheckInput.addEventListener("change", () => {
+            void saveSelectedProgress();
+        });
+    }
+
+    function ensureDetailActionButtons() {
+        const actions = elements.selectedDetails.querySelector(".details-actions");
+        if (!actions) return;
+
+        if (!editLocationButton) {
+            editLocationButton = document.createElement("button");
+            editLocationButton.type = "button";
+            editLocationButton.id = "edit-selected-pin";
+            editLocationButton.className = "secondary-location-action";
+            editLocationButton.textContent = "Edytuj własną znajdźkę";
+            editLocationButton.addEventListener("click", beginEditSelectedLocation);
+            actions.prepend(editLocationButton);
+        }
+
+        if (!pinLocationButton) {
+            pinLocationButton = document.createElement("button");
+            pinLocationButton.type = "button";
+            pinLocationButton.id = "toggle-selected-pin";
+            pinLocationButton.className = "secondary-location-action";
+            pinLocationButton.textContent = "Przypnij pinezkę";
+            pinLocationButton.addEventListener("click", () => {
+                void toggleSelectedPin();
+            });
+            actions.prepend(pinLocationButton);
+        }
+
+        elements.deleteSelected.textContent = "Archiwizuj znajdźkę";
+    }
+
+    // ================================================
+    // 8. STATUS AND EVENT CONTEXT
+    // ================================================
+
+    function renderProgressEditor(location) {
+        ensureProgressPanel();
+
+        const contextEventId = getProgressContextEventId();
+        const contextEvent = contextEventId ? getEventById(contextEventId) : null;
+        const contextLabel = byId("progress-context-label");
+        const help = byId("progress-help");
+
+        if (!contextEvent || location.isReference) {
+            progressSelect.disabled = true;
+            needsCheckInput.disabled = true;
+            contextLabel.textContent = location.isReference
+                ? "Punkt kontrolny — nie jest znajdźką katalogową."
+                : "Wybierz wydarzenie, aby zmienić status.";
+            help.textContent = "Postęp jest zapisywany osobno dla każdego wydarzenia.";
+            elements.selectedStatus.textContent = "—";
+            return;
+        }
+
+        const archived = contextEvent.status === "archived";
+        const progress = getProgress(contextEvent.id, location.id);
+
+        progressSelect.value = progress.status || "not_found";
+        needsCheckInput.checked = Boolean(progress.needsCheck);
+
+        progressSelect.disabled = archived || location.isArchived;
+        needsCheckInput.disabled = archived || location.isArchived;
+
+        contextLabel.textContent = `Wydarzenie: ${contextEvent.name}`;
+        help.textContent = archived
+            ? "Zarchiwizowane wydarzenie jest tylko do odczytu."
+            : "Zmiana dotyczy wyłącznie Twojego postępu w tym wydarzeniu.";
+
+        elements.selectedStatus.textContent =
+            `${PROGRESS_STATUS[progress.status]?.label || "Nieznaleziona"}${progress.needsCheck ? " · Do sprawdzenia" : ""}`;
+    }
+
+    async function saveSelectedProgress() {
+        const location = getLocationById(selectedLocationId);
+        const eventId = getProgressContextEventId();
+        const event = eventId ? getEventById(eventId) : null;
+
+        if (!location || !event || !progressSelect || !needsCheckInput) return;
+
+        if (event.status === "archived") {
+            setEditorStatus("Nie można zmieniać postępu w zarchiwizowanym wydarzeniu.");
+            renderProgressEditor(location);
+            return;
+        }
+
+        const status = progressSelect.value;
+        const needsCheck = needsCheckInput.checked;
+
+        try {
+            // In the global "Wszystkie respy" view, a "Znaleziono"
+            // status also adds the location to the chosen event.
+            if (
+                status === "found" &&
+                currentFilterId === "all" &&
+                !locationBelongsToEvent(location.id, event.id)
+            ) {
+                const relation = await dataApi.assignLocationToEvent(event.id, location.id);
+                database.eventLocations.push(relation);
+            }
+
+            const saved = await dataApi.setProgress(
+                event.id,
+                location.id,
+                status,
+                needsCheck
+            );
+
+            database.playerProgress = database.playerProgress.filter(
+                item => !(
+                    item.userId === saved.userId &&
+                    item.eventId === saved.eventId &&
+                    item.locationId === saved.locationId
+                )
+            );
+            database.playerProgress.push(saved);
+
+            renderProgressEditor(location);
+            renderLocationMarkers();
+            renderCatalog();
+            renderEventSelectors();
+
+            setEditorStatus(
+                `Zapisano status „${PROGRESS_STATUS[status].label}” dla wydarzenia „${event.name}”.`
+            );
+        } catch (error) {
+            console.error("SA Event Maps: Nie udało się zapisać postępu.", error);
+            setEditorStatus(error.message || "Nie udało się zapisać statusu.");
+            renderProgressEditor(location);
+        }
+    }
+
+    // ================================================
+    // 9. EVENT HELPERS AND SELECTORS
+    // ================================================
+
+    function renderEventSelectors() {
+        const previousContext = elements.assignEventSelect.value;
+        elements.eventFilter.replaceChildren();
+        elements.assignEventSelect.replaceChildren();
+
+        const allOption = document.createElement("option");
+        allOption.value = "all";
+        allOption.textContent = "Wszystkie respy znajdziek";
+        elements.eventFilter.appendChild(allOption);
+
+        const emptyOption = document.createElement("option");
+        emptyOption.value = "";
+        emptyOption.textContent = "Wybierz wydarzenie";
+        elements.assignEventSelect.appendChild(emptyOption);
+
+        database.events.forEach(event => {
+            const found = getFoundCountForEvent(event.id);
+            const official = event.officialCollectibleCount;
+            const progressLabel = official === null || official === undefined
+                ? `${found} znalezionych`
+                : `${found}/${official}`;
+
+            const suffix = event.status === "archived" ? " · archiwum" : "";
+            const label = `${event.name} (${progressLabel})${suffix}`;
+
+            const filterOption = document.createElement("option");
+            filterOption.value = event.id;
+            filterOption.textContent = label;
+            elements.eventFilter.appendChild(filterOption);
+
+            if (event.status !== "archived") {
+                const assignmentOption = document.createElement("option");
+                assignmentOption.value = event.id;
+                assignmentOption.textContent = label;
+                elements.assignEventSelect.appendChild(assignmentOption);
+            }
+        });
+
+        if (
+            currentFilterId !== "all" &&
+            !getEventById(currentFilterId)
+        ) {
+            currentFilterId = "all";
+        }
+
+        elements.eventFilter.value = currentFilterId;
+
+        if (currentFilterId !== "all") {
+            elements.assignEventSelect.value = currentFilterId;
+            elements.assignEventSelect.disabled = true;
+        } else {
+            elements.assignEventSelect.disabled = false;
+            elements.assignEventSelect.value =
+                [...elements.assignEventSelect.options].some(
+                    option => option.value === previousContext
+                )
+                    ? previousContext
+                    : "";
+        }
+
+        const selectedEvent = getEventById(currentFilterId);
+        const canManageEvent = isAdmin() &&
+            currentFilterId !== "all" &&
+            selectedEvent &&
+            selectedEvent.status !== "archived";
+
+        elements.createEvent.hidden = !isAdmin();
+        elements.editEvent.hidden = !isAdmin();
+        elements.deleteEvent.hidden = !isAdmin();
+
+        elements.editEvent.disabled = !canManageEvent;
+        elements.deleteEvent.disabled = !canManageEvent;
+        elements.deleteEvent.textContent = "Archiwizuj event";
+
+        if (selectedEvent?.status === "archived") {
+            elements.editEvent.disabled = true;
+            elements.deleteEvent.disabled = true;
+        }
+
+        updateAssignmentControls();
+    }
+
+    function updateAssignmentControls() {
+        const location = getLocationById(selectedLocationId);
+        const eventId = getProgressContextEventId();
+        const event = eventId ? getEventById(eventId) : null;
+
+        const activeEvent = event && event.status !== "archived";
+        const alreadyAssigned = location && event
+            ? locationBelongsToEvent(location.id, event.id)
+            : false;
+
+        elements.assignLocation.disabled =
+            !location || !activeEvent || alreadyAssigned || location.isArchived;
+
+        elements.removeAssignment.hidden = !isAdmin();
+        elements.removeAssignment.disabled =
+            !isAdmin() || !location || !activeEvent || !alreadyAssigned;
+
+        if (!location || !event) {
+            elements.assignLocation.textContent = "Przypisz do eventu";
+        } else if (alreadyAssigned) {
+            elements.assignLocation.textContent = "Już przypisano";
+        } else {
+            elements.assignLocation.textContent = "Przypisz do eventu";
+        }
+    }
+
+    // ================================================
+    // 10. EVENT EDITOR
+    // ================================================
+
+    function openEventEditor(mode, event = null) {
+        if (!isAdmin()) return;
+
+        editingEventId = event?.id || null;
+        elements.eventEditor.hidden = false;
+        elements.eventEditorTitle.textContent =
+            mode === "edit" ? "Edytuj event" : "Nowy event";
+
+        elements.eventName.value = event?.name || "";
+        elements.eventDescription.value = event?.description || "";
+        elements.eventStart.value = event?.startDate || "";
+        elements.eventEnd.value = event?.endDate || "";
+        elements.eventOfficialCount.value =
+            event?.officialCollectibleCount ?? "";
+
+        elements.eventEditorStatus.textContent =
+            mode === "edit"
+                ? "Zmień informacje o wydarzeniu i zapisz."
+                : "Wpisz nazwę, opis oraz opcjonalną oficjalną liczbę znajdziek.";
+
+        elements.eventName.focus();
+    }
+
+    function closeEventEditor() {
+        elements.eventEditor.hidden = true;
+        elements.eventName.value = "";
+        elements.eventDescription.value = "";
+        elements.eventStart.value = "";
+        elements.eventEnd.value = "";
+        elements.eventOfficialCount.value = "";
+        editingEventId = null;
+    }
+
+    async function saveEvent() {
+        if (!isAdmin()) return;
+
+        const name = elements.eventName.value.trim();
+        const description = elements.eventDescription.value.trim();
+        const startDate = elements.eventStart.value;
+        const endDate = elements.eventEnd.value;
+        const officialText = elements.eventOfficialCount.value.trim();
+
+        if (!name) {
+            elements.eventEditorStatus.textContent = "Podaj nazwę wydarzenia.";
+            return;
+        }
+
+        if (startDate && endDate && endDate < startDate) {
+            elements.eventEditorStatus.textContent =
+                "Data zakończenia nie może być wcześniejsza niż data rozpoczęcia.";
+            return;
+        }
+
+        if (officialText !== "" && (
+            !Number.isInteger(Number(officialText)) ||
+            Number(officialText) < 0
+        )) {
+            elements.eventEditorStatus.textContent =
+                "Oficjalna liczba znajdziek musi być liczbą całkowitą nieujemną.";
+            return;
+        }
+
+        const payload = {
+            name,
+            description,
+            startDate,
+            endDate,
+            officialCollectibleCount: officialText === "" ? null : Number(officialText)
+        };
+
+        elements.saveEvent.disabled = true;
+
+        try {
+            if (editingEventId) {
+                const updated = await dataApi.updateEvent(editingEventId, payload);
+                database.events = database.events.map(
+                    item => item.id === updated.id ? updated : item
+                );
+                setEditorStatus(`Zaktualizowano event „${updated.name}”.`);
+            } else {
+                const created = await dataApi.createEvent(payload);
+                database.events.push(created);
+                currentFilterId = created.id;
+                setEditorStatus(`Utworzono event „${created.name}”.`);
+            }
+
+            closeEventEditor();
+            renderApplication();
+        } catch (error) {
+            console.error("SA Event Maps: Nie udało się zapisać eventu.", error);
+            elements.eventEditorStatus.textContent =
+                error.message || "Nie udało się zapisać wydarzenia.";
+        } finally {
+            elements.saveEvent.disabled = false;
+        }
+    }
+
+    async function archiveCurrentEvent() {
+        if (!isAdmin()) return;
+
+        const event = getEventById(currentFilterId);
+        if (!event || event.status === "archived") return;
+
+        const confirmation = window.confirm(
+            `Czy zarchiwizować wydarzenie „${event.name}”?\n\n` +
+            "Wydarzenie zostanie ukryte przed graczami. Przypisane lokalizacje pozostaną w katalogu głównym."
+        );
+
+        if (!confirmation) return;
+
+        elements.deleteEvent.disabled = true;
+
+        try {
+            await dataApi.archiveEvent(event.id);
+            event.statusBeforeArchive = event.status;
+            event.status = "archived";
+            event.archivedAt = new Date().toISOString();
+            currentFilterId = "all";
+            renderApplication();
+            closeEventEditor();
+            setEditorStatus(`Zarchiwizowano event „${event.name}”.`);
+        } catch (error) {
+            console.error("SA Event Maps: Nie udało się zarchiwizować eventu.", error);
+            setEditorStatus(error.message || "Nie udało się zarchiwizować wydarzenia.");
+        } finally {
+            elements.deleteEvent.disabled = false;
+        }
+    }
+
+    elements.createEvent.addEventListener("click", () => openEventEditor("create"));
+    elements.editEvent.addEventListener("click", () => {
+        const event = getEventById(currentFilterId);
+        if (event && event.status !== "archived") openEventEditor("edit", event);
+    });
+    elements.saveEvent.addEventListener("click", () => void saveEvent());
+    elements.cancelEvent.addEventListener("click", closeEventEditor);
+    elements.deleteEvent.addEventListener("click", () => void archiveCurrentEvent());
+
+    // ================================================
+    // 11. EVENT FILTER AND ASSIGNMENTS
+    // ================================================
+
+    elements.eventFilter.addEventListener("change", () => {
+        currentFilterId = elements.eventFilter.value || "all";
+        if (selectedLocationId) {
+            const location = getLocationById(selectedLocationId);
+            if (location && currentFilterId !== "all" &&
+                !locationBelongsToEvent(location.id, currentFilterId)) {
+                clearSelectedLocation();
+            }
+        }
+        renderApplication();
+    });
+
+    elements.assignEventSelect.addEventListener("change", () => {
+        updateAssignmentControls();
+        const location = getLocationById(selectedLocationId);
+        if (location) {
+            renderProgressEditor(location);
+            renderLocationMarkers();
+            renderCatalog();
+        }
+    });
+
+    elements.assignLocation.addEventListener("click", async () => {
+        const location = getLocationById(selectedLocationId);
+        const eventId = getProgressContextEventId();
+        const event = eventId ? getEventById(eventId) : null;
+
+        if (!location || !event || event.status === "archived") return;
+
+        try {
+            const relation = await dataApi.assignLocationToEvent(event.id, location.id);
+            database.eventLocations.push(relation);
+            renderApplication();
+            showLocationDetails(location);
+            setEditorStatus(`Przypisano „${location.name}” do eventu „${event.name}”.`);
+        } catch (error) {
+            setEditorStatus(error.message || "Nie udało się przypisać znajdźki.");
+        }
+    });
+
+    elements.removeAssignment.addEventListener("click", async () => {
+        if (!isAdmin()) return;
+
+        const location = getLocationById(selectedLocationId);
+        const eventId = getProgressContextEventId();
+        const event = eventId ? getEventById(eventId) : null;
+
+        if (!location || !event) return;
+
+        const confirmation = window.confirm(
+            `Czy usunąć „${location.name}” z wydarzenia „${event.name}”?\n\n` +
+            "Sama lokalizacja pozostanie w katalogu głównym."
+        );
+
+        if (!confirmation) return;
+
+        try {
+            await dataApi.removeLocationFromEvent(event.id, location.id);
+            database.eventLocations = database.eventLocations.filter(
+                item => !(item.eventId === event.id && item.locationId === location.id)
+            );
+            renderApplication();
+            clearSelectedLocation();
+            setEditorStatus(`Usunięto przypisanie „${location.name}” do eventu „${event.name}”.`);
+        } catch (error) {
+            setEditorStatus(error.message || "Nie udało się usunąć przypisania.");
+        }
+    });
+
+    // ================================================
+    // 12. LEAFLET MAP
+    // ================================================
+
+    const map = L.map("game-map", {
+        crs: L.CRS.Simple,
+        minZoom: -4,
+        maxZoom: 2.5,
+        zoomSnap: 0.25,
+        zoomDelta: 0.5,
+        scrollWheelZoom: true,
+        wheelDebounceTime: 40,
+        wheelPxPerZoomLevel: 60,
+        doubleClickZoom: false,
+        zoomControl: true,
+        keyboard: false,
+        dragging: true,
+        touchZoom: true,
+        zoomAnimation: true
+    });
+
+    const referenceLayer = L.layerGroup().addTo(map);
+    const locationLayer = L.layerGroup().addTo(map);
+
+    function createReferenceIcon() {
+        return L.divIcon({
+            className: "sa-reference-marker",
+            html: '<div class="sa-reference-marker-core">R</div>',
+            iconSize: [28, 28],
+            iconAnchor: [14, 14]
+        });
+    }
+
+    function createMarkerIcon(location) {
+        const eventId = getProgressContextEventId();
+        const progress = eventId ? getProgress(eventId, location.id) : {
+            status: "not_found",
+            needsCheck: false
+        };
+
+        const status = PROGRESS_STATUS[progress.status] || PROGRESS_STATUS.not_found;
+        const classes = [
+            "sa-map-pin",
+            `status-${progress.status || "not_found"}`,
+            location.isPinned ? "is-pinned" : "",
+            progress.needsCheck ? "needs-check" : "",
+            location.isArchived ? "is-archived" : ""
+        ].filter(Boolean).join(" ");
+
+        return L.divIcon({
+            className: "sa-location-marker",
+            html: `
+                <div class="${classes}" style="--pin-color:${status.color}">
+                    <span class="sa-map-pin-core"></span>
+                    ${location.isPinned ? '<span class="sa-map-pin-lock" aria-hidden="true">◆</span>' : ""}
+                    ${progress.needsCheck ? '<span class="sa-map-pin-check" aria-hidden="true">!</span>' : ""}
+                </div>
+            `,
+            iconSize: [34, 42],
+            iconAnchor: [17, 40],
+            popupAnchor: [0, -36]
+        });
+    }
+
+    function addReferenceMarkers() {
+        referenceLayer.clearLayers();
+
+        referencePins.forEach(pin => {
+            const position = worldToLatLng(pin.world.x, pin.world.y);
+            if (!position) return;
+
+            const marker = L.marker(position, {
+                icon: createReferenceIcon(),
+                draggable: false,
+                title: pin.name
+            });
+
+            marker.addTo(referenceLayer);
+            marker.bindTooltip(escapeHTML(pin.name), { direction: "top" });
+        });
+    }
+
+    function addLocationMarker(location) {
+        const position = worldToLatLng(location.world.x, location.world.y);
+        if (!position) {
+            console.warn("SA Event Maps: Lokalizacja poza mapą:", location.name);
+            return;
+        }
+
+        const draggable = canMoveLocation(location);
+
+        const marker = L.marker(position, {
+            icon: createMarkerIcon(location),
+            draggable,
+            title: location.name,
+            keyboard: true,
+            bubblingMouseEvents: false
+        });
+
+        marker.addTo(locationLayer);
+        location.marker = marker;
+
+        marker.bindTooltip(escapeHTML(location.name), {
+            direction: "top",
+            offset: [0, -27]
+        });
+
+        marker.on("click", () => showLocationDetails(location));
+
+        if (draggable) {
+            marker.on("dragend", async () => {
+                const newPosition = marker.getLatLng();
+                const pixelX = newPosition.lng;
+                const pixelY = imageHeight - newPosition.lat;
+
+                if (!isPixelInsideImage(pixelX, pixelY)) {
+                    const oldPosition = worldToLatLng(location.world.x, location.world.y);
+                    if (oldPosition) marker.setLatLng(oldPosition);
+                    setEditorStatus("Nie można przesunąć znajdźki poza granice mapy.");
+                    return;
+                }
+
+                const world = pixelToWorld(pixelX, pixelY);
+                const oldWorld = { ...location.world };
+
+                marker.dragging.disable();
+                try {
+                    const updated = await dataApi.updateLocation(location.id, {
+                        world: {
+                            x: world.x,
+                            y: world.y
+                        }
+                    });
+
+                    location.world = updated.world;
+                    location.updatedAt = updated.updatedAt;
+                    setEditorStatus(
+                        `Zaktualizowano położenie „${location.name}”. ` +
+                        `X: ${formatCoordinate(world.x)}, Y: ${formatCoordinate(world.y)}.`
+                    );
+
+                    renderCatalog();
+                    if (selectedLocationId === location.id) {
+                        showLocationDetails(location);
+                    }
+                } catch (error) {
+                    location.world = oldWorld;
+                    const oldLatLng = worldToLatLng(oldWorld.x, oldWorld.y);
+                    if (oldLatLng) marker.setLatLng(oldLatLng);
+                    setEditorStatus(error.message || "Nie udało się zapisać nowego położenia.");
+                } finally {
+                    if (canMoveLocation(location)) marker.dragging.enable();
+                }
+            });
+        }
+    }
+
+    function renderLocationMarkers() {
+        locationLayer.clearLayers();
+
+        getVisibleLocations().forEach(location => {
+            location.marker = null;
+            addLocationMarker(location);
+        });
+
+        updateMapLocationCount();
+    }
+
+    function updateMapLocationCount() {
+        elements.locationCount.textContent =
+            `${getVisibleLocations().length} widocznych znajdziek`;
+    }
+
+    // ================================================
+    // 13. SELECTED LOCATION DETAILS AND ACTIONS
+    // ================================================
+
+    function clearSelectedLocation() {
+        selectedLocationId = null;
+        elements.emptyDetails.hidden = false;
+        elements.selectedDetails.hidden = true;
+
+        elements.deleteSelected.disabled = true;
+        elements.assignLocation.disabled = true;
+        elements.removeAssignment.disabled = true;
+
+        elements.selectedEvents.textContent = "—";
+
+        if (progressPanel) progressPanel.hidden = true;
+        if (editLocationButton) editLocationButton.hidden = true;
+        if (pinLocationButton) pinLocationButton.hidden = true;
+    }
+
+    function showLocationDetails(location) {
+        selectedLocationId = location.id;
+
+        elements.emptyDetails.hidden = true;
+        elements.selectedDetails.hidden = false;
+
+        elements.selectedName.textContent = location.name;
+        elements.selectedDescription.textContent =
+            location.description || "Brak opisu.";
+
+        const pinnedState = byId("selected-pin-pinned");
+        if (pinnedState) {
+            pinnedState.textContent = location.isPinned ? "Przypięta" : "Nieprzypięta";
+        }
+
+        detailFields.area.textContent = location.area || "Nie określono";
+        detailFields.x.textContent = formatCoordinate(location.world.x);
+        detailFields.y.textContent = formatCoordinate(location.world.y);
+        detailFields.z.textContent =
+            location.world.z === null || location.world.z === undefined
+                ? "Nie podano"
+                : formatCoordinate(location.world.z);
+
+        const associatedEvents = location.isReference
+            ? []
+            : getEventsForLocation(location.id);
+
+        elements.selectedEvents.textContent =
+            associatedEvents.length
+                ? associatedEvents.map(event => event.name).join(", ")
+                : "Brak przypisań";
+
+        elements.deleteSelected.hidden = !isAdmin() || location.isReference || location.isArchived;
+        elements.deleteSelected.disabled = !isAdmin() || location.isReference || location.isArchived;
+
+        ensureDetailActionButtons();
+
+        const canEdit = !location.isReference && canEditLocation(location);
+        editLocationButton.hidden = !canEdit;
+        editLocationButton.disabled = !canEdit;
+
+        pinLocationButton.hidden = !isAdmin() || location.isReference || location.isArchived;
+        pinLocationButton.disabled = !isAdmin() || location.isReference || location.isArchived;
+        pinLocationButton.textContent = location.isPinned
+            ? "Odepnij pinezkę"
+            : "Przypnij pinezkę";
+
+        if (progressPanel) progressPanel.hidden = Boolean(location.isReference);
+
+        updateAssignmentControls();
+        renderProgressEditor(location);
+    }
+
+    async function toggleSelectedPin() {
+        if (!isAdmin()) return;
+
+        const location = getLocationById(selectedLocationId);
+        if (!location || location.isArchived) return;
+
+        try {
+            const updated = await dataApi.setLocationPinned(
+                location.id,
+                !location.isPinned
+            );
+
+            Object.assign(location, updated);
+            renderApplication();
+            showLocationDetails(location);
+
+            setEditorStatus(
+                location.isPinned
+                    ? `Przypięto „${location.name}”. Nie można jej teraz przesuwać.`
+                    : `Odpięto „${location.name}”.`
+            );
+        } catch (error) {
+            setEditorStatus(error.message || "Nie udało się zmienić przypięcia.");
+        }
+    }
+
+    elements.deleteSelected.addEventListener("click", async () => {
+        if (!isAdmin()) return;
+
+        const location = getLocationById(selectedLocationId);
+        if (!location || location.isArchived) return;
+
+        const associatedCount = getEventsForLocation(location.id).length;
+        const confirmation = window.confirm(
+            `Czy zarchiwizować znajdźkę „${location.name}”?\n\n` +
+            `Jest przypisana do ${associatedCount} wydarzeń.\n\n` +
+            "Lokalizacja zostanie ukryta przed graczami, ale jej historia pozostanie w bazie."
+        );
+
+        if (!confirmation) return;
+
+        elements.deleteSelected.disabled = true;
+
+        try {
+            await dataApi.archiveLocation(location.id);
+            location.isArchived = true;
+            location.archivedAt = new Date().toISOString();
+
+            clearSelectedLocation();
+            renderApplication();
+            setEditorStatus(`Zarchiwizowano znajdźkę „${location.name}”.`);
+        } catch (error) {
+            elements.deleteSelected.disabled = false;
+            setEditorStatus(error.message || "Nie udało się zarchiwizować znajdźki.");
+        }
+    });
+
+    // ================================================
+    // 14. CREATE AND EDIT LOCATIONS
+    // ================================================
+
+    function beginEditSelectedLocation() {
+        const location = getLocationById(selectedLocationId);
+
+        if (!location || !canEditLocation(location)) return;
+
+        editingLocationId = location.id;
+
+        form.name.value = location.name;
+        form.area.value = location.area || "";
+        form.x.value = String(location.world.x);
+        form.y.value = String(location.world.y);
+        form.z.value =
+            location.world.z === null || location.world.z === undefined
+                ? ""
+                : String(location.world.z);
+        form.description.value = location.description || "";
+
+        elements.addPin.textContent = "Zapisz zmiany znajdźki";
+        elements.clearForm.textContent = "Anuluj edycję";
+
+        setEditorStatus(`Edytujesz własną lokalizację „${location.name}”.`);
+        form.name.focus();
+
+        document.querySelector(".pin-editor")?.scrollIntoView({
+            behavior: "smooth",
+            block: "nearest"
+        });
+    }
+
+    async function saveLocationFromForm() {
+        const name = form.name.value.trim();
+        const area = form.area.value.trim() || "Nie określono";
+        const xText = form.x.value.trim();
+        const yText = form.y.value.trim();
+        const zValue = parseOptionalNumber(form.z.value);
+        const description = form.description.value.trim();
+
+        if (!name) {
+            setEditorStatus("Podaj nazwę znajdźki.");
+            form.name.focus();
+            return;
+        }
+
+        if (xText === "" || yText === "") {
+            setEditorStatus("Podaj X i Y albo odczytaj współrzędne, klikając mapę.");
+            return;
+        }
+
+        const x = Number(xText);
+        const y = Number(yText);
+
+        if (!Number.isFinite(x) || !Number.isFinite(y)) {
+            setEditorStatus("Współrzędne X i Y muszą być prawidłowymi liczbami.");
+            return;
+        }
+
+        if (Number.isNaN(zValue)) {
+            setEditorStatus("Współrzędna Z musi być liczbą albo pozostać pusta.");
+            return;
+        }
+
+        const pixel = worldToPixel(x, y);
+        if (!isPixelInsideImage(pixel.x, pixel.y)) {
+            setEditorStatus("Podane współrzędne znajdują się poza granicami mapy.");
+            return;
+        }
+
+        elements.addPin.disabled = true;
+
+        try {
+            if (editingLocationId) {
+                const location = getLocationById(editingLocationId);
+
+                if (!location || !canEditLocation(location)) {
+                    throw new Error("Nie masz uprawnień do edycji tej pinezki.");
+                }
+
+                const updated = await dataApi.updateLocation(location.id, {
+                    name,
+                    area,
+                    description,
+                    world: { x, y, z: zValue }
+                });
+
+                Object.assign(location, updated);
+                setEditorStatus(`Zapisano zmiany w lokalizacji „${location.name}”.`);
+            } else {
+                const created = await dataApi.createLocation({
+                    name,
+                    area,
+                    description,
+                    world: { x, y, z: zValue }
+                });
+
+                database.locations.push(created);
+
+                let assignmentWarning = "";
+
+                // When creating a pin in a specific event view,
+                // add it to that event. In the global view it stays
+                // in the common catalog until explicitly assigned.
+                if (currentFilterId !== "all") {
+                    const event = getEventById(currentFilterId);
+
+                    if (event && event.status !== "archived") {
+                        try {
+                            const relation = await dataApi.assignLocationToEvent(
+                                event.id,
+                                created.id
+                            );
+                            database.eventLocations.push(relation);
+                        } catch (assignmentError) {
+                            console.warn(
+                                "Lokalizacja została utworzona, ale nie udało się przypisać jej do wydarzenia.",
+                                assignmentError
+                            );
+                            assignmentWarning =
+                                ` Pinezka została utworzona, ale nie udało się przypisać jej do eventu: ${assignmentError.message}`;
+                        }
+                    }
+                }
+
+                selectedLocationId = created.id;
+                setEditorStatus(
+                    `Dodano „${created.name}” do wspólnego katalogu.${assignmentWarning}`
+                );
+            }
+
+            editingLocationId = null;
+            clearPinForm();
+            renderApplication();
+
+            const selected = getLocationById(selectedLocationId);
+            if (selected) showLocationDetails(selected);
+            elements.addPin.textContent = "Dodaj znajdźkę do katalogu";
+            elements.clearForm.textContent = "Wyczyść formularz";
+        } catch (error) {
+            console.error("SA Event Maps: Nie udało się zapisać lokalizacji.", error);
+            setEditorStatus(error.message || "Nie udało się zapisać znajdźki.");
+        } finally {
+            elements.addPin.disabled = false;
+        }
+    }
+
+    function clearPinForm() {
+        form.name.value = "";
+        form.area.value = "";
+        form.x.value = "";
+        form.y.value = "";
+        form.z.value = "";
+        form.description.value = "";
+        editingLocationId = null;
+        elements.addPin.textContent = "Dodaj znajdźkę do katalogu";
+        elements.clearForm.textContent = "Wyczyść formularz";
+    }
+
+    elements.addPin.addEventListener("click", () => void saveLocationFromForm());
+
+    elements.clearForm.addEventListener("click", () => {
+        clearPinForm();
+        setEditorStatus("Formularz został wyczyszczony.");
+    });
+
+    // ================================================
+    // 15. COORDINATE READER
+    // ================================================
+
+    map.on("click", event => {
+        if (!mapReady) return;
+
+        const pixelX = event.latlng.lng;
+        const pixelY = imageHeight - event.latlng.lat;
+
+        if (!isPixelInsideImage(pixelX, pixelY)) {
+            selectedMapCoordinate = null;
+            elements.readoutX.textContent = "—";
+            elements.readoutY.textContent = "—";
+            elements.useCoordinates.disabled = true;
+            setCoordinateStatus("Kliknij wewnątrz obrazu mapy.");
+            return;
+        }
+
+        const world = pixelToWorld(pixelX, pixelY);
+        selectedMapCoordinate = { x: world.x, y: world.y };
+
+        elements.readoutX.textContent = formatCoordinate(world.x);
+        elements.readoutY.textContent = formatCoordinate(world.y);
+        elements.useCoordinates.disabled = false;
+
+        setCoordinateStatus(
+            `Odczytano X=${formatCoordinate(world.x)}, Y=${formatCoordinate(world.y)}.`
+        );
+    });
+
+    elements.useCoordinates.addEventListener("click", () => {
+        if (!selectedMapCoordinate) return;
+
+        form.x.value = formatCoordinate(selectedMapCoordinate.x);
+        form.y.value = formatCoordinate(selectedMapCoordinate.y);
+
+        setEditorStatus("Współrzędne mapy zostały przeniesione do formularza.");
+        form.name.focus();
+    });
+
+    // ================================================
+    // 16. CATALOG SEARCH AND DISPLAY
+    // ================================================
+
+    function renderCatalog() {
+        elements.catalogList.replaceChildren();
+
+        let locations = [...getVisibleLocations()];
+        const query = elements.locationSearch.value.trim().toLowerCase();
+
+        if (query) {
+            locations = locations.filter(location => {
+                const searchable = [
+                    location.name,
+                    location.area,
+                    location.description
+                ].join(" ").toLowerCase();
+
+                return searchable.includes(query);
+            });
+        }
+
+        const sortMode = elements.locationSort.value;
+
+        locations.sort((a, b) => {
+            if (sortMode === "area-asc") {
+                return (a.area || "").localeCompare(b.area || "", "pl");
+            }
+
+            if (sortMode === "created-desc") {
+                return String(b.createdAt || "").localeCompare(String(a.createdAt || ""));
+            }
+
+            return a.name.localeCompare(b.name, "pl");
+        });
+
+        elements.catalogLocationCount.textContent = locations.length;
+
+        if (locations.length === 0) {
+            const empty = document.createElement("div");
+            empty.className = "catalog-empty";
+            empty.textContent = query
+                ? "Nie znaleziono pasujących lokalizacji."
+                : "Katalog nie zawiera jeszcze lokalizacji.";
+            elements.catalogList.appendChild(empty);
+
+            setCatalogStatus(
+                query
+                    ? "Brak wyników wyszukiwania."
+                    : "Katalog nie zawiera jeszcze lokalizacji."
+            );
+            return;
+        }
+
+        const eventId = getProgressContextEventId();
+
+        locations.forEach(location => {
+            const row = document.createElement("div");
+            row.className = "catalog-row";
+            row.tabIndex = 0;
+            row.setAttribute("role", "button");
+
+            const progress = eventId
+                ? getProgress(eventId, location.id)
+                : { status: "not_found", needsCheck: false };
+
+            const statusCell = document.createElement("span");
+            statusCell.className = "catalog-status-cell";
+
+            const dot = document.createElement("span");
+            dot.className =
+                `catalog-status-dot status-${progress.status || "not_found"}` +
+                (progress.needsCheck ? " needs-check" : "");
+            dot.title =
+                `${PROGRESS_STATUS[progress.status]?.label || "Nieznaleziona"}` +
+                (progress.needsCheck ? " · Do sprawdzenia" : "");
+            statusCell.appendChild(dot);
+
+            const name = document.createElement("span");
+            name.className = "catalog-name";
+            name.textContent = location.name;
+
+            const area = document.createElement("span");
+            area.className = "catalog-area";
+            area.textContent = location.area || "Nie określono";
+
+            const events = document.createElement("span");
+            events.className = "catalog-events";
+            const associated = getEventsForLocation(location.id);
+            events.textContent = associated.length
+                ? associated.map(event => event.name).join(", ")
+                : "Brak przypisania";
+
+            row.append(statusCell, name, area, events);
+
+            row.addEventListener("click", () => selectLocationOnMap(location));
+            row.addEventListener("keydown", event => {
+                if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    selectLocationOnMap(location);
+                }
+            });
+
+            elements.catalogList.appendChild(row);
+        });
+
+        setCatalogStatus(`Wyświetlono ${locations.length} lokalizacji.`);
+    }
+
+    elements.locationSearch.addEventListener("input", renderCatalog);
+    elements.locationSort.addEventListener("change", renderCatalog);
+
+    function selectLocationOnMap(location) {
+        showLocationDetails(location);
+
+        const position = worldToLatLng(location.world.x, location.world.y);
+        if (!position) return;
+
+        map.setView(position, Math.max(map.getZoom(), 0), { animate: true });
+
+        if (location.marker) {
+            location.marker.openTooltip();
+        }
+    }
+
+    // ================================================
+    // 17. RENDER APPLICATION
+    // ================================================
+
+    function renderApplication() {
+        if (!dataReady) return;
+
+        renderEventSelectors();
+        updateGlobalCounters();
+
+        if (mapReady) {
+            renderLocationMarkers();
+        }
+
+        renderCatalog();
+
+        if (selectedLocationId) {
+            const selected = getLocationById(selectedLocationId);
+            if (selected) {
+                showLocationDetails(selected);
+            } else {
+                clearSelectedLocation();
+            }
+        }
+
+        const isPlayer = !isAdmin();
+        elements.createEvent.hidden = isPlayer;
+        elements.editEvent.hidden = isPlayer;
+        elements.deleteEvent.hidden = isPlayer;
+    }
+
+    // ================================================
+    // 18. EXPORT CURRENT CLOUD DATA
+    // ================================================
+
+    function exportCloudData() {
+        const backup = {
+            schema: "sa-event-maps-cloud-backup",
+            version: 1,
+            exportedAt: new Date().toISOString(),
+            exportedBy: currentUser?.id || null,
+            locations: database.locations,
+            events: database.events,
+            eventLocations: database.eventLocations,
+            categories: database.categories,
+            playerProgress: database.playerProgress
+        };
+
+        const blob = new Blob(
+            [JSON.stringify(backup, null, 2)],
+            { type: "application/json;charset=utf-8" }
+        );
+
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = `sa-event-maps-cloud-backup-${new Date().toISOString().slice(0, 10)}.json`;
+
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+        setEditorStatus("Utworzono kopię danych pobranych z Supabase.");
+    }
+
+    elements.exportButton.addEventListener("click", exportCloudData);
+
+    // The old import routine wrote to localStorage. It is deliberately
+    // unavailable after switching to Supabase as the source of truth.
+    elements.importButton.hidden = true;
+    elements.importFile.hidden = true;
+
+    // ================================================
+    // 19. GRID
+    // ================================================
+
+    function addGridSegment(points) {
+        if (points.length < 2) return;
+
+        L.polyline(points, {
+            color: "#65d6a3",
+            weight: 1,
+            opacity: 0.34,
+            interactive: false,
+            smoothFactor: 1
+        }).addTo(gridLayer);
+    }
+
+    function createGridLine(axis, fixedValue) {
+        let segment = [];
+        const sampleStep = 50;
+
+        for (
+            let variable = -GRID_LIMIT;
+            variable <= GRID_LIMIT;
+            variable += sampleStep
+        ) {
+            const worldX = axis === "x" ? fixedValue : variable;
+            const worldY = axis === "y" ? fixedValue : variable;
+            const pixel = worldToPixel(worldX, worldY);
+
+            if (isPixelInsideImage(pixel.x, pixel.y)) {
+                segment.push([imageHeight - pixel.y, pixel.x]);
+            } else {
+                addGridSegment(segment);
+                segment = [];
+            }
+        }
+
+        addGridSegment(segment);
+    }
+
+    function buildGrid() {
+        if (gridLayer) map.removeLayer(gridLayer);
+
+        gridLayer = L.layerGroup();
+
+        for (
+            let value = -GRID_LIMIT;
+            value <= GRID_LIMIT;
+            value += GRID_SPACING
+        ) {
+            createGridLine("x", value);
+            createGridLine("y", value);
+        }
+
+        if (gridVisible) gridLayer.addTo(map);
+    }
+
+    function setGridVisibility(visible) {
+        gridVisible = visible;
+
+        if (gridVisible) {
+            if (!gridLayer) buildGrid();
+            if (!map.hasLayer(gridLayer)) gridLayer.addTo(map);
+        } else if (gridLayer && map.hasLayer(gridLayer)) {
+            map.removeLayer(gridLayer);
+        }
+
+        elements.toggleGrid.classList.toggle("active", gridVisible);
+        elements.toggleGrid.textContent =
+            gridVisible ? "Siatka: włączona" : "Siatka: wyłączona";
+        elements.gridStatus.textContent =
+            gridVisible ? "SIATKA WŁĄCZONA" : "SIATKA WYŁĄCZONA";
+    }
+
+    elements.toggleGrid.addEventListener("click", () => {
+        if (!mapReady) return;
+        if (!gridLayer) buildGrid();
+        setGridVisibility(!gridVisible);
+    });
+
+    // ================================================
+    // 20. MAP RESET AND KEYBOARD
+    // ================================================
+
+    function resetMapView() {
+        if (!imageBounds) return;
+
+        map.fitBounds(imageBounds, {
+            animate: true,
+            padding: [12, 12]
+        });
+    }
+
+    elements.resetMap.addEventListener("click", resetMapView);
+
+    mapElement.addEventListener("keydown", event => {
+        if (event.ctrlKey || event.altKey || event.metaKey) return;
+
+        let handled = true;
+
+        switch (event.key) {
+            case "+":
+            case "=":
+            case "Add":
+                map.zoomIn();
+                break;
+            case "-":
+            case "_":
+            case "Subtract":
+                map.zoomOut();
+                break;
+            case "ArrowUp":
+                map.panBy([0, -PAN_DISTANCE]);
+                break;
+            case "ArrowDown":
+                map.panBy([0, PAN_DISTANCE]);
+                break;
+            case "ArrowLeft":
+                map.panBy([-PAN_DISTANCE, 0]);
+                break;
+            case "ArrowRight":
+                map.panBy([PAN_DISTANCE, 0]);
+                break;
+            case "Home":
+                resetMapView();
+                break;
+            default:
+                handled = false;
+        }
+
+        if (handled) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+    });
+
+    mapElement.addEventListener("pointerdown", () => {
+        mapElement.focus({ preventScroll: true });
+    });
+
+    window.addEventListener("resize", () => {
+        map.invalidateSize({ pan: false });
+    });
+
+    // ================================================
+    // 21. NAVIGATION
+    // ================================================
+
+    function setupNavigation() {
+        const buttons = [
+            ...document.querySelectorAll(".navigation .nav-item")
+        ];
+
+        const targets = [
+            document.querySelector(".workspace-grid"),
+            document.querySelector(".catalog-panel"),
+            document.querySelector(".event-management")
+        ];
+
+        buttons.forEach((button, index) => {
+            const target = targets[index];
+            if (!target) return;
+
+            button.addEventListener("click", () => {
+                if (index === 0) {
+                    currentFilterId = "all";
+                    elements.eventFilter.value = "all";
+                    renderApplication();
+                }
+
+                target.scrollIntoView({
+                    behavior: "smooth",
+                    block: "start"
+                });
+
+                buttons.forEach(item => item.classList.remove("is-active"));
+                button.classList.add("is-active");
+            });
+        });
+    }
+
+    // ================================================
+    // 22. MAP IMAGE
+    // ================================================
+
+    function loadMapImage() {
+        const image = new Image();
+
+        image.onload = () => {
+            imageWidth = image.naturalWidth;
+            imageHeight = image.naturalHeight;
+
+            if (imageWidth !== IMAGE_WIDTH || imageHeight !== IMAGE_HEIGHT) {
+                mapElement.textContent =
+                    `Nieprawidłowa rozdzielczość mapy: ${imageWidth} × ${imageHeight}. Wymagane 4096 × 4096.`;
+                console.error("SA Event Maps: Rozdzielczość obrazu nie pasuje do kalibracji.");
+                return;
+            }
+
+            imageBounds = [
+                [0, 0],
+                [imageHeight, imageWidth]
+            ];
+
+            L.imageOverlay(
+                MAP_IMAGE_URL,
+                imageBounds,
+                { alt: "Mapa GTA San Andreas z cieniami" }
+            ).addTo(map);
+
+            const allowedBounds = L.latLngBounds(
+                [
+                    [-imageHeight * 0.35, -imageWidth * 0.35],
+                    [imageHeight * 1.35, imageWidth * 1.35]
+                ]
+            );
+
+            map.setMaxBounds(allowedBounds);
+            map.options.maxBoundsViscosity = 0.6;
+
+            requestAnimationFrame(() => {
+                map.invalidateSize();
+                resetMapView();
+
+                mapReady = true;
+                addReferenceMarkers();
+                buildGrid();
+                setGridVisibility(false);
+
+                elements.useCoordinates.disabled = true;
+
+                if (dataReady) {
+                    renderApplication();
+                }
+
+                setCoordinateStatus(
+                    "Kliknij mapę, aby odczytać współrzędne X i Y."
+                );
+
+                console.info("SA Event Maps: Mapa załadowana.", {
+                    image: MAP_IMAGE_URL,
+                    width: imageWidth,
+                    height: imageHeight
+                });
+            });
+        };
+
+        image.onerror = () => {
+            mapElement.textContent =
+                `Nie udało się załadować ${MAP_IMAGE_URL}. Sprawdź plik w folderze assets.`;
+            console.error("SA Event Maps: Nie znaleziono obrazu mapy:", MAP_IMAGE_URL);
+        };
+
+        image.src = MAP_IMAGE_URL;
+    }
+
+    // ================================================
+    // 23. SUPABASE BOOTSTRAP AND AUTH STATE
+    // ================================================
+
+    async function bootstrapFromSupabase() {
+        if (bootstrapPromise) return bootstrapPromise;
+
+        bootstrapPromise = (async () => {
+            updateStorageStatus("Łączenie z Supabase...", true);
+            setEditorStatus("Pobieranie katalogu ze wspólnej bazy danych...");
+
+            try {
+                const catalog = await dataApi.loadCatalog();
+
+                currentUser = catalog.user;
+
+                database.locations = catalog.locations;
+                database.events = catalog.events;
+                database.eventLocations = catalog.eventLocations;
+                database.categories = catalog.categories;
+                database.playerProgress = catalog.playerProgress;
+
+                dataReady = true;
+
+                updateStorageStatus("Połączono z Supabase", true);
+                setEditorStatus(
+                    `Katalog pobrany. Lokalizacje: ${database.locations.length}, wydarzenia: ${database.events.length}.`
+                );
+
+                renderApplication();
+
+                console.info("SA Event Maps: Katalog został połączony z Supabase.", {
+                    role: currentUser.role,
+                    locations: database.locations.length,
+                    events: database.events.length,
+                    assignments: database.eventLocations.length,
+                    categories: database.categories.length,
+                    progress: database.playerProgress.length
+                });
+            } catch (error) {
+                console.error("SA Event Maps: Nie udało się pobrać katalogu.", error);
+                updateStorageStatus("Błąd połączenia z bazą", false);
+                setEditorStatus(
+                    error.message || "Nie udało się pobrać danych z Supabase."
+                );
+            }
+        })();
+
+        try {
+            await bootstrapPromise;
+        } finally {
+            bootstrapPromise = null;
+        }
+    }
+
+    function clearCloudState() {
+        currentUser = null;
+        dataReady = false;
+
+        database.locations = [];
+        database.events = [];
+        database.eventLocations = [];
+        database.categories = [];
+        database.playerProgress = [];
+
+        selectedLocationId = null;
+        currentFilterId = "all";
+
+        clearSelectedLocation();
+
+        updateGlobalCounters();
+        renderEventSelectors();
+
+        if (mapReady) {
+            renderLocationMarkers();
+            renderCatalog();
+        }
+
+        updateStorageStatus("Zaloguj się, aby wczytać katalog", true);
+    }
+
+    supabase.auth.onAuthStateChange((event, session) => {
+        window.setTimeout(() => {
+            if (session && event !== "PASSWORD_RECOVERY") {
+                void bootstrapFromSupabase();
+            } else if (!session) {
+                clearCloudState();
+            }
+        }, 0);
+    });
+
+    // ================================================
+    // 24. START APPLICATION
+    // ================================================
+
+    setupNavigation();
+    ensureProgressPanel();
+    elements.useCoordinates.disabled = true;
+
+    // A cloud export replaces the old localStorage export/import workflow.
+    elements.importButton.hidden = true;
+    elements.importFile.hidden = true;
+
+    loadMapImage();
+
+    supabase.auth.getSession()
+        .then(({ data, error }) => {
+            if (error) {
+                throw error;
+            }
+
+            if (data?.session) {
+                void bootstrapFromSupabase();
+            } else {
+                updateStorageStatus("Zaloguj się, aby wczytać katalog", true);
+                setEditorStatus("Po zalogowaniu aplikacja pobierze wspólny katalog z Supabase.");
+            }
+        })
+        .catch(error => {
+            console.error("SA Event Maps: Nie udało się sprawdzić sesji.", error);
+            updateStorageStatus("Błąd sesji Supabase", false);
+        });
+
+    clearSelectedLocation();
+    updateGlobalCounters();
+
+    console.info("SA Event Maps: Aplikacja mapy uruchomiona; źródłem danych jest Supabase.");
+})();

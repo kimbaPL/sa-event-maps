@@ -1,0 +1,38 @@
+﻿# Dependencies
+node_modules/
+
+# Backups and diagnostic files
+backup-before-supabase-integration/
+realtime-image-inspection/
+realtime-image-inspection.tar
+realtime-rootfs-check.tar
+*.tar
+db-pull-debug.txt
+realtime-passwd.txt
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Local Supabase files
+supabase/.temp/
+supabase/.branches/
+
+# Generated build directory
+dist/
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Cloudflare build output
+dist/
+.wrangler/
+supabase/snippets/

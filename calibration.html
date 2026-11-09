@@ -1,0 +1,412 @@
+
+<!DOCTYPE html>
+<html lang="pl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>SA Event Maps — Kalibracja</title>
+
+    <!-- LEAFLET -->
+    <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    >
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-width: 320px;
+            min-height: 100vh;
+            background: #0b1017;
+            color: #edf2f7;
+            font-family: Arial, Helvetica, sans-serif;
+        }
+
+        .calibration-app {
+            max-width: 1700px;
+            margin: auto;
+            padding: 25px;
+        }
+
+        .header {
+            margin-bottom: 24px;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 27px;
+        }
+
+        .header p {
+            margin-top: 9px;
+            color: #8d9baa;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 340px;
+            gap: 18px;
+            align-items: stretch;
+        }
+
+        .map-section,
+        .control-panel {
+            overflow: hidden;
+            border: 1px solid #283544;
+            border-radius: 14px;
+            background: #111923;
+        }
+
+        .map-section {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+
+        .map-heading {
+            min-height: 60px;
+            padding: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            border-bottom: 1px solid #283544;
+        }
+
+        .map-heading strong {
+            font-size: 13px;
+        }
+
+        .map-heading span {
+            color: #8d9baa;
+            font-size: 11px;
+        }
+
+        #calibration-map {
+            width: 100%;
+            height: 70vh;
+            min-height: 450px;
+            background: #172c30;
+            outline: none;
+        }
+
+        .map-hint {
+            padding: 13px 16px;
+            color: #8d9baa;
+            font-size: 11px;
+            line-height: 1.6;
+            border-top: 1px solid #283544;
+        }
+
+        .control-panel {
+            padding: 20px;
+        }
+
+        .eyebrow {
+            color: #65d6a3;
+            font-size: 10px;
+            font-weight: bold;
+            letter-spacing: 1.4px;
+        }
+
+        .control-panel h2 {
+            margin: 8px 0;
+            font-size: 18px;
+        }
+
+        .description {
+            color: #8d9baa;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+
+        .status {
+            margin: 17px 0;
+            padding: 12px;
+            border: 1px solid #355b4a;
+            border-radius: 8px;
+            background: rgba(101, 214, 163, 0.07);
+            color: #a6e8c9;
+            font-size: 11px;
+            line-height: 1.6;
+        }
+
+        .point-list {
+            display: flex;
+            flex-direction: column;
+            gap: 9px;
+            margin: 17px 0;
+        }
+
+        .point-button {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #283544;
+            border-radius: 9px;
+            background: #182331;
+            color: #edf2f7;
+            text-align: left;
+            cursor: pointer;
+        }
+
+        .point-button:hover {
+            background: #202e3d;
+        }
+
+        .point-button.active {
+            border-color: #65d6a3;
+            background: rgba(101, 214, 163, 0.1);
+        }
+
+        .point-button.completed {
+            border-color: #355b4a;
+        }
+
+        .point-name {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .point-coordinates {
+            margin-top: 7px;
+            color: #8d9baa;
+            font-size: 10px;
+            line-height: 1.6;
+        }
+
+        .point-state {
+            color: #65d6a3;
+            font-size: 10px;
+        }
+
+        .actions {
+            display: flex;
+            flex-direction: column;
+            gap: 9px;
+            margin-top: 20px;
+        }
+
+        .action-button {
+            min-height: 42px;
+            padding: 10px 13px;
+            border: 1px solid #283544;
+            border-radius: 8px;
+            background: #182331;
+            color: #edf2f7;
+            font-size: 12px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .action-button.primary {
+            border-color: #65d6a3;
+            background: #65d6a3;
+            color: #082017;
+        }
+
+        .action-button:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+        }
+
+        .action-button:not(:disabled):hover {
+            filter: brightness(1.1);
+        }
+
+        .result {
+            margin-top: 18px;
+            padding: 13px;
+            border-radius: 8px;
+            background: #182331;
+            color: #8d9baa;
+            font-size: 11px;
+            line-height: 1.7;
+            white-space: pre-line;
+        }
+
+        .leaflet-container {
+            background: #172c30;
+            cursor: crosshair;
+        }
+
+        .leaflet-control-zoom a {
+            background: #111923 !important;
+            color: #edf2f7 !important;
+            border-color: #283544 !important;
+        }
+
+        .leaflet-control-zoom a:hover {
+            background: #253647 !important;
+            color: #65d6a3 !important;
+        }
+
+        @media (max-width: 950px) {
+            .layout {
+                grid-template-columns: minmax(0, 1fr);
+            }
+
+            .control-panel {
+                min-height: 400px;
+            }
+        }
+
+        @media (max-width: 600px) {
+            .calibration-app {
+                padding: 12px;
+            }
+
+            #calibration-map {
+                height: 55vh;
+                min-height: 350px;
+            }
+
+            .map-heading {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+        }
+    </style>
+
+    <!-- LEAFLET -->
+    <script
+        src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        defer
+    ></script>
+
+    <!-- NASZ KALIBRATOR -->
+    <script src="calibration.js" defer></script>
+
+</head>
+
+<body>
+
+    <div class="calibration-app">
+
+        <header class="header">
+            <h1>SA Event Maps — Kalibracja mapy</h1>
+
+            <p>
+                Dopasowanie obrazu GTA San Andreas do rzeczywistych
+                współrzędnych świata gry.
+            </p>
+        </header>
+
+
+        <main class="layout">
+
+            <!-- MAPA -->
+            <section class="map-section">
+
+                <div class="map-heading">
+
+                    <strong>Mapa GTA San Andreas</strong>
+
+                    <span id="map-dimensions">
+                        Oczekiwanie na załadowanie mapy...
+                    </span>
+
+                </div>
+
+                <div
+                    id="calibration-map"
+                    tabindex="0"
+                    aria-label="Mapa do kalibracji współrzędnych"
+                ></div>
+
+                <div class="map-hint">
+                    Wybierz punkt po prawej stronie, a następnie
+                    kliknij dokładne miejsce na mapie odpowiadające
+                    pozycji odczytanej wcześniej w MTA.
+                    Możesz przybliżać i przesuwać mapę.
+                </div>
+
+            </section>
+
+
+            <!-- PANEL KALIBRACJI -->
+            <aside class="control-panel">
+
+                <div class="eyebrow">
+                    NARZĘDZIE TECHNICZNE
+                </div>
+
+                <h2>Punkty kontrolne</h2>
+
+                <p class="description">
+                    Wybierz jeden z czterech punktów i kliknij
+                    odpowiadające mu miejsce na obrazie mapy.
+                </p>
+
+
+                <div id="calibration-status" class="status">
+                    Ładowanie narzędzia kalibracyjnego...
+                </div>
+
+
+                <!-- LISTA PUNKTÓW -->
+                <div id="control-points" class="point-list">
+
+                    <!-- Punkty zostaną dodane przez JavaScript -->
+
+                </div>
+
+
+                <!-- PRZYCISKI -->
+                <div class="actions">
+
+                    <button
+                        id="calculate-calibration"
+                        class="action-button primary"
+                        type="button"
+                        disabled
+                    >
+                        Oblicz kalibrację
+                    </button>
+
+                    <button
+                        id="download-calibration"
+                        class="action-button"
+                        type="button"
+                        disabled
+                    >
+                        Pobierz plik kalibracji
+                    </button>
+
+                    <button
+                        id="reset-calibration"
+                        class="action-button"
+                        type="button"
+                    >
+                        Wyczyść wybrane punkty
+                    </button>
+
+                </div>
+
+
+                <!-- WYNIKI -->
+                <div
+                    id="calibration-result"
+                    class="result"
+                    aria-live="polite"
+                >
+                    Wyniki kalibracji pojawią się tutaj.
+                </div>
+
+            </aside>
+
+        </main>
+
+    </div>
+
+</body>
+</html>
