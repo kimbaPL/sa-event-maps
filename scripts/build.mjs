@@ -20,6 +20,7 @@ const filesToPublish = [
     "auth.js",
     "supabase-client.js",
     "supabase-data.js",
+    "admin-panel.js",
     "assets/gtasa-map-shadows.jpg"
 ];
 

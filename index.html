@@ -41,6 +41,7 @@
 
 <!-- SUPABASE DATA LAYER -->
 <script src="supabase-data.js" defer></script>
+<script src="admin-panel.js" defer></script>
 
 <!-- MAIN APPLICATION -->
 <script src="app.js" defer></script>
@@ -260,6 +261,16 @@
             >
                 <span>◷</span>
                 Zarządzanie eventami
+            </button>
+
+            <button
+                id="admin-nav-button"
+                class="nav-item"
+                type="button"
+                hidden
+            >
+                <span>⚙</span>
+                Panel administracyjny
             </button>
 
         </nav>
@@ -1147,6 +1158,95 @@
             >
                 Katalog gotowy do użycia.
             </div>
+
+        </section>
+
+
+        <!-- ==================================
+             PANEL ADMINISTRACYJNY
+        =================================== -->
+
+        <section
+            id="admin-panel"
+            class="admin-panel"
+            aria-labelledby="admin-panel-title"
+            hidden
+        >
+
+            <div class="admin-panel-header">
+
+                <div>
+                    <div class="eyebrow">ZARZĄDZANIE ORGANIZACJĄ</div>
+                    <h2 id="admin-panel-title">Panel administracyjny</h2>
+                    <p>Użytkownicy i uprawnienia do korzystania z SA Event Maps.</p>
+                </div>
+
+                <button
+                    id="admin-refresh-users"
+                    class="admin-refresh-button"
+                    type="button"
+                >
+                    Odśwież listę
+                </button>
+
+            </div>
+
+            <div class="admin-section-heading">
+                <div>
+                    <h3>Użytkownicy</h3>
+                    <p>Przeglądaj konta i zarządzaj rangami administratorów.</p>
+                </div>
+                <span id="admin-users-count" class="admin-users-count">—</span>
+            </div>
+
+            <div class="admin-users-toolbar">
+                <label class="admin-search-field" for="admin-users-search">
+                    <span>Wyszukaj użytkownika</span>
+                    <input
+                        id="admin-users-search"
+                        type="search"
+                        placeholder="Nick lub adres e-mail..."
+                        autocomplete="off"
+                    >
+                </label>
+            </div>
+
+            <div
+                id="admin-panel-status"
+                class="admin-panel-status"
+                role="status"
+                aria-live="polite"
+            >
+                Lista użytkowników zostanie pobrana po otwarciu panelu.
+            </div>
+
+            <div class="admin-users-table-wrap">
+                <table class="admin-users-table">
+                    <thead>
+                        <tr>
+                            <th scope="col">UŻYTKOWNIK</th>
+                            <th scope="col">ADRES E-MAIL</th>
+                            <th scope="col">RANGA</th>
+                            <th scope="col">UTWORZONO</th>
+                            <th scope="col">OSTATNIE LOGOWANIE</th>
+                            <th scope="col">DZIAŁANIE</th>
+                        </tr>
+                    </thead>
+                    <tbody id="admin-users-table-body">
+                        <tr>
+                            <td colspan="6" class="admin-table-empty">
+                                Otwórz panel, aby pobrać listę użytkowników.
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <p class="admin-panel-note">
+                Zmiany rang są weryfikowane przez bazę danych. Ostatni administrator
+                nie może utracić swoich uprawnień, a administrator nie może odebrać
+                rangi samemu sobie.
+            </p>
 
         </section>
 

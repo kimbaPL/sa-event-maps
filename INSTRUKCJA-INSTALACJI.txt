@@ -1,0 +1,46 @@
+SA EVENT MAPS — PANEL ADMINISTRACYJNY (ETAP 1)
+
+ZAWARTOSC PACZKI
+- index.html
+  Pełny plik z dodatkową pozycją „Panel administracyjny” i sekcją zarządzania użytkownikami.
+- style.css
+  Pełny plik z wyglądem tabeli użytkowników i panelu.
+- scripts/build.mjs
+  Pełny skrypt budowania; dodaje admin-panel.js do publikowanych zasobów.
+- admin-panel.js
+  Nowy moduł interfejsu listy użytkowników i zmiany rang.
+- supabase/migrations/20261109221500_admin_user_management.sql
+  Nowa migracja z dwiema zabezpieczonymi funkcjami PostgreSQL.
+
+INSTALACJA PLIKOW
+1. Zamknij lokalny serwer podglądu i edytory otwarte w folderze projektu.
+2. Zrób świeżą kopię całego aktualnego folderu projektu.
+3. Rozpakuj paczkę bezpośrednio do głównego folderu projektu.
+4. Zezwól na zastąpienie istniejących plików, gdy system o to zapyta.
+5. Nowy plik admin-panel.js i nowa migracja SQL powinny zostać dodane w podanych ścieżkach.
+
+WAŻNE
+- Nie zastępuj app.js, auth.js, supabase-client.js ani supabase-data.js.
+- Nie usuwaj ani nie zmieniaj istniejących migracji.
+- Nie usuwaj danych testowych ani rekordów w Supabase.
+- Nie publikuj nowego frontendu przed zastosowaniem nowej migracji SQL.
+- Migracja nie tworzy nowej tabeli i nie modyfikuje istniejących rekordów. Dodaje tylko dwie funkcje PostgreSQL oraz ich uprawnienia.
+- Funkcja listująca konta zwraca e-maile wyłącznie administratorowi.
+- Funkcja zmiany rangi sprawdza uprawnienia w bazie, blokuje równoczesne zmiany, chroni ostatniego administratora i blokuje samodzielne odebranie sobie rangi.
+
+KOLEJNOSC WDROZENIA
+1. Najpierw skopiuj pliki do projektu.
+2. Następnie zastosuj nową migrację do zdalnego projektu Supabase.
+3. Sprawdź, czy obie funkcje istnieją i mają ograniczone uprawnienia.
+4. Dopiero potem wykonaj build, commit i push do GitHub; Cloudflare opublikuje nowy frontend.
+5. Na końcu sprawdź panel na koncie administratora i upewnij się, że zwykły gracz nie widzi pozycji menu.
+
+Weryfikacja wykonana przed przygotowaniem paczki:
+- składnia JavaScript sprawdzona przez node --check;
+- HTML sprawdzony pod kątem powielonych identyfikatorów;
+- CSS sprawdzony pod kątem parowania nawiasów klamrowych;
+- skrypt build sprawdzony na plikach paczki z tymczasowym zastępczym plikiem obrazu.
+
+Uwaga: właściwy obraz assets/gtasa-map-shadows.jpg nie jest częścią tej paczki aktualizacyjnej.
+Musi pozostać w istniejącym folderze projektu. Nie został dołączony, aby nie nadpisywać
+oryginalnego obrazu mapy.

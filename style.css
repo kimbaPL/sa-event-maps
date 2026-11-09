@@ -2417,3 +2417,313 @@ textarea {
         margin-right: 15px;
     }
 }
+
+
+/* =========================================
+   ADMINISTRATOR PANEL — USER MANAGEMENT
+   ========================================= */
+
+.admin-panel {
+    margin: 30px 0 26px;
+    padding: 25px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    scroll-margin-top: 20px;
+}
+
+.admin-panel-header,
+.admin-section-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 18px;
+}
+
+.admin-panel-header {
+    padding-bottom: 22px;
+    border-bottom: 1px solid var(--border);
+}
+
+.admin-panel-header h2 {
+    margin: 7px 0 6px;
+    font-size: 23px;
+}
+
+.admin-panel-header p,
+.admin-section-heading p {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.admin-refresh-button {
+    min-height: 38px;
+    padding: 0 14px;
+    border: 1px solid rgba(101, 214, 163, 0.28);
+    border-radius: 8px;
+    background: rgba(101, 214, 163, 0.08);
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.admin-refresh-button:hover:not(:disabled) {
+    background: rgba(101, 214, 163, 0.15);
+}
+
+.admin-section-heading {
+    align-items: center;
+    margin: 22px 0 15px;
+}
+
+.admin-section-heading h3 {
+    margin: 0 0 5px;
+    font-size: 16px;
+}
+
+.admin-users-count {
+    min-width: 34px;
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background: var(--surface-light);
+    color: var(--text);
+    font-size: 11px;
+    font-weight: 800;
+    text-align: center;
+}
+
+.admin-users-toolbar {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 14px;
+    margin-bottom: 12px;
+}
+
+.admin-search-field {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    width: min(100%, 420px);
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+}
+
+.admin-search-field input {
+    width: 100%;
+    min-height: 40px;
+    padding: 0 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    outline: none;
+    background: #0c141d;
+    color: var(--text);
+    font-size: 12px;
+}
+
+.admin-search-field input:focus {
+    border-color: var(--accent-dark);
+    box-shadow: 0 0 0 3px rgba(101, 214, 163, 0.08);
+}
+
+.admin-panel-status {
+    min-height: 38px;
+    margin: 0 0 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.02);
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1.5;
+}
+
+.admin-panel-status[data-state="success"] {
+    border-color: rgba(101, 214, 163, 0.25);
+    color: var(--accent);
+}
+
+.admin-panel-status[data-state="error"] {
+    border-color: rgba(237, 119, 119, 0.35);
+    color: #f08d8d;
+}
+
+.admin-panel-status[data-state="loading"] {
+    color: var(--blue);
+}
+
+.admin-users-table-wrap {
+    width: 100%;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: #0d151e;
+}
+
+.admin-users-table {
+    width: 100%;
+    min-width: 850px;
+    border-collapse: collapse;
+    text-align: left;
+}
+
+.admin-users-table th {
+    padding: 13px 12px;
+    border-bottom: 1px solid var(--border);
+    background: #121d28;
+    color: #8292a3;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.65px;
+    white-space: nowrap;
+}
+
+.admin-users-table td {
+    padding: 13px 12px;
+    border-bottom: 1px solid rgba(40, 53, 68, 0.7);
+    color: var(--text-muted);
+    font-size: 11px;
+    vertical-align: middle;
+}
+
+.admin-users-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.admin-users-table tbody tr:hover {
+    background: rgba(255, 255, 255, 0.018);
+}
+
+.admin-user-name-cell strong {
+    display: block;
+    color: var(--text);
+    font-size: 12px;
+}
+
+.admin-self-label,
+.admin-email-state {
+    display: block;
+    margin-top: 5px;
+    font-size: 9px;
+    line-height: 1.4;
+}
+
+.admin-self-label {
+    color: var(--accent);
+}
+
+.admin-email-state.is-confirmed {
+    color: var(--accent);
+}
+
+.admin-email-state.is-pending {
+    color: #e6bd62;
+}
+
+.admin-user-email-cell > span {
+    display: block;
+    color: var(--text);
+    white-space: nowrap;
+}
+
+.admin-role-badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 25px;
+    padding: 0 9px;
+    border: 1px solid transparent;
+    border-radius: 20px;
+    font-size: 10px;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.admin-role-badge.is-admin {
+    border-color: rgba(101, 214, 163, 0.3);
+    background: rgba(101, 214, 163, 0.09);
+    color: var(--accent);
+}
+
+.admin-role-badge.is-player {
+    border-color: rgba(141, 155, 170, 0.2);
+    background: rgba(141, 155, 170, 0.07);
+    color: #a9b5c1;
+}
+
+.admin-date-cell {
+    min-width: 130px;
+    white-space: nowrap;
+}
+
+.admin-role-action {
+    min-height: 32px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: var(--surface-light);
+    color: var(--text);
+    font-size: 10px;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.admin-role-action.is-promote {
+    border-color: rgba(101, 214, 163, 0.28);
+    color: var(--accent);
+}
+
+.admin-role-action.is-demote {
+    border-color: rgba(237, 119, 119, 0.28);
+    color: #f08d8d;
+}
+
+.admin-role-action:hover:not(:disabled) {
+    background: var(--surface-hover);
+}
+
+.admin-role-action:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.admin-table-empty {
+    padding: 28px 14px !important;
+    color: var(--text-muted) !important;
+    text-align: center;
+}
+
+.admin-panel-note {
+    margin: 13px 0 0;
+    color: #7f8f9f;
+    font-size: 10px;
+    line-height: 1.6;
+}
+
+@media (max-width: 700px) {
+    .admin-panel {
+        padding: 17px 13px;
+    }
+
+    .admin-panel-header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .admin-refresh-button {
+        align-self: flex-start;
+    }
+
+    .admin-panel-header h2 {
+        font-size: 20px;
+    }
+
+    .admin-section-heading {
+        align-items: flex-start;
+    }
+}
