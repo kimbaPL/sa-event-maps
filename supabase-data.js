@@ -593,6 +593,19 @@ The UI must not write directly to localStorage.
         return mapProgress(data);
     }
 
+    async function listCategories() {
+        await requireAdmin();
+
+        const { data, error } = await supabase
+            .from("categories")
+            .select("id, name, description, color, icon, sort_order, is_archived, created_by, created_at, updated_at")
+            .order("sort_order", { ascending: true })
+            .order("name", { ascending: true });
+
+        if (error) throwDatabaseError("categories", error);
+        return (data || []).map(mapCategory);
+    }
+
     async function createCategory(input) {
         const user = await requireAdmin();
         const name = String(input?.name || "").trim();
@@ -659,6 +672,34 @@ The UI must not write directly to localStorage.
         return true;
     }
 
+    async function restoreCategory(categoryId) {
+        await requireAdmin();
+
+        const { data, error } = await supabase
+            .from("categories")
+            .update({ is_archived: false })
+            .eq("id", categoryId)
+            .eq("is_archived", true)
+            .select("id")
+            .maybeSingle();
+
+        if (error) throwDatabaseError("categories", error);
+        if (!data) throw new Error("Nie udało się przywrócić kategorii. Sprawdź, czy aktywna kategoria o tej samej nazwie już nie istnieje.");
+        return true;
+    }
+
+    async function deleteCategory(categoryId) {
+        await requireAdmin();
+
+        const { data, error } = await supabase.rpc("admin_delete_category", {
+            p_category_id: categoryId
+        });
+
+        if (error) throwDatabaseError("categories", error);
+        if (data !== true) throw new Error("Nie udało się trwale usunąć kategorii.");
+        return true;
+    }
+
     window.saEventMapsData = Object.freeze({
         getUserContext,
         loadCatalog,
@@ -672,9 +713,12 @@ The UI must not write directly to localStorage.
         assignLocationToEvent,
         removeLocationFromEvent,
         setProgress,
+        listCategories,
         createCategory,
         updateCategory,
-        archiveCategory
+        archiveCategory,
+        restoreCategory,
+        deleteCategory
     });
 
     console.info("SA Event Maps: Warstwa komunikacji z Supabase została uruchomiona.");

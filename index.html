@@ -1163,96 +1163,6 @@
 
 
         <!-- ==================================
-             PANEL ADMINISTRACYJNY
-        =================================== -->
-
-        <section
-            id="admin-panel"
-            class="admin-panel"
-            aria-labelledby="admin-panel-title"
-            hidden
-        >
-
-            <div class="admin-panel-header">
-
-                <div>
-                    <div class="eyebrow">ZARZĄDZANIE ORGANIZACJĄ</div>
-                    <h2 id="admin-panel-title">Panel administracyjny</h2>
-                    <p>Użytkownicy i uprawnienia do korzystania z SA Event Maps.</p>
-                </div>
-
-                <button
-                    id="admin-refresh-users"
-                    class="admin-refresh-button"
-                    type="button"
-                >
-                    Odśwież listę
-                </button>
-
-            </div>
-
-            <div class="admin-section-heading">
-                <div>
-                    <h3>Użytkownicy</h3>
-                    <p>Przeglądaj konta i zarządzaj rangami administratorów.</p>
-                </div>
-                <span id="admin-users-count" class="admin-users-count">—</span>
-            </div>
-
-            <div class="admin-users-toolbar">
-                <label class="admin-search-field" for="admin-users-search">
-                    <span>Wyszukaj użytkownika</span>
-                    <input
-                        id="admin-users-search"
-                        type="search"
-                        placeholder="Nick lub adres e-mail..."
-                        autocomplete="off"
-                    >
-                </label>
-            </div>
-
-            <div
-                id="admin-panel-status"
-                class="admin-panel-status"
-                role="status"
-                aria-live="polite"
-            >
-                Lista użytkowników zostanie pobrana po otwarciu panelu.
-            </div>
-
-            <div class="admin-users-table-wrap">
-                <table class="admin-users-table">
-                    <thead>
-                        <tr>
-                            <th scope="col">UŻYTKOWNIK</th>
-                            <th scope="col">ADRES E-MAIL</th>
-                            <th scope="col">RANGA</th>
-                            <th scope="col">UTWORZONO</th>
-                            <th scope="col">OSTATNIE LOGOWANIE</th>
-                            <th scope="col">DZIAŁANIE</th>
-                        </tr>
-                    </thead>
-                    <tbody id="admin-users-table-body">
-                        <tr>
-                            <td colspan="6" class="admin-table-empty">
-                                Otwórz panel, aby pobrać listę użytkowników.
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-
-            <p class="admin-panel-note">
-                Zmiany rang są weryfikowane przez bazę danych. Właściciel projektu
-                ma stałą rangę administratora i nie może zostać zdegradowany.
-                Ostatni administrator jest chroniony, a administrator nie może
-                odebrać rangi samemu sobie.
-            </p>
-
-        </section>
-
-
-        <!-- ==================================
              STOPKA
         =================================== -->
 
@@ -1265,6 +1175,229 @@
     </main>
 
 </div>
+
+
+
+<!-- ======================================
+     FULL-SCREEN ADMINISTRATOR WORKSPACE
+======================================= -->
+
+<section
+    id="admin-workspace"
+    class="admin-workspace"
+    aria-label="Panel administracyjny SA Event Maps"
+    hidden
+>
+    <aside class="admin-sidebar">
+        <div class="admin-brand">
+            <div class="brand-icon">SA</div>
+            <div>
+                <div class="brand-name">SA Event Maps</div>
+                <div class="brand-subtitle">Centrum administracji</div>
+            </div>
+        </div>
+
+        <div class="admin-sidebar-label">ZARZĄDZANIE</div>
+        <nav class="admin-navigation" aria-label="Sekcje panelu administracyjnego">
+            <button class="admin-nav-item is-active" type="button" data-admin-section="users">
+                <span class="admin-nav-icon">♙</span>
+                <span>Użytkownicy</span>
+            </button>
+            <button class="admin-nav-item" type="button" data-admin-section="events">
+                <span class="admin-nav-icon">▦</span>
+                <span>Wydarzenia</span>
+                <small>Wkrótce</small>
+            </button>
+            <button class="admin-nav-item" type="button" data-admin-section="categories">
+                <span class="admin-nav-icon">◇</span>
+                <span>Kategorie</span>
+            </button>
+            <button class="admin-nav-item" type="button" data-admin-section="locations">
+                <span class="admin-nav-icon">⌖</span>
+                <span>Pinezki i lokalizacje</span>
+                <small>Wkrótce</small>
+            </button>
+            <button class="admin-nav-item" type="button" data-admin-section="settings">
+                <span class="admin-nav-icon">⚙</span>
+                <span>Ustawienia globalne</span>
+                <small>Wkrótce</small>
+            </button>
+            <button class="admin-nav-item" type="button" data-admin-section="help">
+                <span class="admin-nav-icon">▤</span>
+                <span>Instrukcje i regulamin</span>
+                <small>Wkrótce</small>
+            </button>
+        </nav>
+
+        <div class="admin-sidebar-footer">
+            <div class="admin-access-indicator"></div>
+            <span>Dostęp administratora</span>
+        </div>
+    </aside>
+
+    <main class="admin-main">
+        <header class="admin-topbar">
+            <div>
+                <div class="admin-breadcrumb">SA Event Maps <span>/</span> Administracja</div>
+                <h1 id="admin-workspace-title">Użytkownicy i uprawnienia</h1>
+            </div>
+            <button id="admin-back-to-map" class="admin-back-button" type="button">
+                <span aria-hidden="true">←</span>
+                Powrót do mapy
+            </button>
+        </header>
+
+        <div class="admin-content">
+            <!-- USERS -->
+            <section class="admin-view is-active" data-admin-view="users" aria-labelledby="admin-users-title">
+                <div class="admin-page-heading">
+                    <div>
+                        <div class="eyebrow">ZARZĄDZANIE ORGANIZACJĄ</div>
+                        <h2 id="admin-users-title">Użytkownicy i uprawnienia</h2>
+                        <p>Przeglądaj konta i zarządzaj rangami administratorów.</p>
+                    </div>
+                    <button id="admin-refresh-users" class="admin-refresh-button" type="button">Odśwież listę</button>
+                </div>
+
+                <div class="admin-section-heading">
+                    <div>
+                        <h3>Lista użytkowników</h3>
+                        <p>Właściciel projektu ma stałe uprawnienia. Zmiany rang są dodatkowo weryfikowane przez bazę danych.</p>
+                    </div>
+                    <span id="admin-users-count" class="admin-users-count">—</span>
+                </div>
+
+                <div class="admin-users-toolbar">
+                    <label class="admin-search-field" for="admin-users-search">
+                        <span>Wyszukaj użytkownika</span>
+                        <input id="admin-users-search" type="search" placeholder="Nick lub adres e-mail..." autocomplete="off">
+                    </label>
+                </div>
+
+                <div id="admin-panel-status" class="admin-panel-status" role="status" aria-live="polite">
+                    Lista użytkowników zostanie pobrana po otwarciu panelu.
+                </div>
+
+                <div class="admin-users-table-wrap">
+                    <table class="admin-users-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">UŻYTKOWNIK</th>
+                                <th scope="col">ADRES E-MAIL</th>
+                                <th scope="col">RANGA</th>
+                                <th scope="col">UTWORZONO</th>
+                                <th scope="col">OSTATNIE LOGOWANIE</th>
+                                <th scope="col">DZIAŁANIE</th>
+                            </tr>
+                        </thead>
+                        <tbody id="admin-users-table-body">
+                            <tr><td colspan="6" class="admin-table-empty">Otwórz panel, aby pobrać listę użytkowników.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <p class="admin-panel-note">
+                    Właściciel projektu nie może zostać zdegradowany. Ostatni administrator jest chroniony,
+                    a administrator nie może odebrać rangi samemu sobie.
+                </p>
+            </section>
+
+            <!-- CATEGORIES -->
+            <section class="admin-view" data-admin-view="categories" aria-labelledby="admin-categories-title" hidden>
+                <div class="admin-page-heading">
+                    <div>
+                        <div class="eyebrow">KATALOG ORGANIZACJI</div>
+                        <h2 id="admin-categories-title">Kategorie</h2>
+                        <p>Twórz i porządkuj kategorie używane przy przypisywaniu znajdziek do wydarzeń.</p>
+                    </div>
+                    <button id="admin-add-category" class="admin-primary-button" type="button">＋ Dodaj kategorię</button>
+                </div>
+
+                <div id="admin-category-status" class="admin-panel-status" role="status" aria-live="polite">
+                    Kategorie zostaną pobrane po otwarciu tej sekcji.
+                </div>
+
+                <div id="admin-category-form-card" class="admin-category-form-card" hidden>
+                    <div class="admin-form-heading">
+                        <div>
+                            <h3 id="admin-category-form-title">Nowa kategoria</h3>
+                            <p>Nazwa jest wymagana. Pozostałe pola są opcjonalne.</p>
+                        </div>
+                    </div>
+                    <form id="admin-category-form" class="admin-category-form">
+                        <input id="admin-category-id" type="hidden">
+                        <label class="admin-form-field admin-form-field-wide" for="admin-category-name">
+                            <span>Nazwa kategorii</span>
+                            <input id="admin-category-name" name="name" type="text" maxlength="80" required placeholder="Np. Halloween 2026">
+                        </label>
+                        <label class="admin-form-field admin-form-field-wide" for="admin-category-description">
+                            <span>Opis</span>
+                            <textarea id="admin-category-description" name="description" rows="3" maxlength="500" placeholder="Krótki opis kategorii (opcjonalnie)"></textarea>
+                        </label>
+                        <label class="admin-form-field" for="admin-category-icon">
+                            <span>Ikona lub emoji</span>
+                            <input id="admin-category-icon" name="icon" type="text" maxlength="12" placeholder="Np. 🎃">
+                        </label>
+                        <label class="admin-form-field" for="admin-category-color">
+                            <span>Kolor</span>
+                            <input id="admin-category-color" name="color" type="color" value="#65d6a3">
+                        </label>
+                        <label class="admin-form-field" for="admin-category-sort">
+                            <span>Kolejność wyświetlania</span>
+                            <input id="admin-category-sort" name="sort_order" type="number" min="0" max="9999" step="1" value="0">
+                        </label>
+                        <div class="admin-category-form-actions admin-form-field-wide">
+                            <button class="admin-primary-button" type="submit">Zapisz kategorię</button>
+                            <button id="admin-cancel-category" class="admin-secondary-button" type="button">Anuluj</button>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="admin-category-toolbar">
+                    <label class="admin-search-field" for="admin-categories-search">
+                        <span>Wyszukaj kategorię</span>
+                        <input id="admin-categories-search" type="search" placeholder="Nazwa lub opis..." autocomplete="off">
+                    </label>
+                    <label class="admin-form-field admin-category-filter" for="admin-categories-filter">
+                        <span>Wyświetl</span>
+                        <select id="admin-categories-filter">
+                            <option value="active">Aktywne</option>
+                            <option value="archived">Zarchiwizowane</option>
+                            <option value="all">Wszystkie</option>
+                        </select>
+                    </label>
+                    <span id="admin-categories-count" class="admin-users-count">—</span>
+                </div>
+
+                <div id="admin-categories-list" class="admin-categories-list">
+                    <div class="admin-empty-state">Otwórz sekcję, aby pobrać kategorie.</div>
+                </div>
+                <p class="admin-panel-note">
+                    Archiwizacja ukrywa kategorię przed nowymi przypisaniami, ale zachowuje dotychczasową historię.
+                    Trwałe usunięcie jest możliwe wyłącznie wtedy, gdy kategoria nie jest przypisana do żadnej lokalizacji wydarzenia.
+                </p>
+            </section>
+
+            <!-- FUTURE MODULES -->
+            <section class="admin-view" data-admin-view="events" aria-labelledby="admin-events-title" hidden>
+                <div class="admin-page-heading"><div><div class="eyebrow">ZARZĄDZANIE KATALOGIEM</div><h2 id="admin-events-title">Wydarzenia</h2><p>Tworzenie, edycja, archiwizacja i bezpieczne usuwanie wydarzeń.</p></div></div>
+                <div class="admin-coming-soon"><strong>Ta sekcja jest przygotowana do rozbudowy.</strong><span>W następnym etapie przeniesiemy tutaj zarządzanie wydarzeniami i dodamy bezpieczne usuwanie rekordów testowych.</span></div>
+            </section>
+            <section class="admin-view" data-admin-view="locations" aria-labelledby="admin-locations-title" hidden>
+                <div class="admin-page-heading"><div><div class="eyebrow">WSPÓLNY KATALOG</div><h2 id="admin-locations-title">Pinezki i lokalizacje</h2><p>Zarządzanie lokalizacjami, przypisaniami do wydarzeń i zdjęciami.</p></div></div>
+                <div class="admin-coming-soon"><strong>Ta sekcja jest przygotowana do rozbudowy.</strong><span>W następnym etapie przeniesiemy tutaj zarządzanie pinezkami, ich powiązaniami oraz galerią zdjęć.</span></div>
+            </section>
+            <section class="admin-view" data-admin-view="settings" aria-labelledby="admin-settings-title" hidden>
+                <div class="admin-page-heading"><div><div class="eyebrow">KONFIGURACJA</div><h2 id="admin-settings-title">Ustawienia globalne</h2><p>Wspólne ustawienia dostępne dla całej organizacji.</p></div></div>
+                <div class="admin-coming-soon"><strong>Ta sekcja jest przygotowana do rozbudowy.</strong><span>Dodamy tutaj m.in. globalne sterowanie przesyłaniem screenshotów.</span></div>
+            </section>
+            <section class="admin-view" data-admin-view="help" aria-labelledby="admin-help-title" hidden>
+                <div class="admin-page-heading"><div><div class="eyebrow">INFORMACJE DLA GRACZY</div><h2 id="admin-help-title">Instrukcje i regulamin</h2><p>Treści pomocnicze i zasady korzystania z SA Event Maps.</p></div></div>
+                <div class="admin-coming-soon"><strong>Ta sekcja jest przygotowana do rozbudowy.</strong><span>Dodamy tutaj edytor instrukcji i regulaminu widocznego dla użytkowników.</span></div>
+            </section>
+        </div>
+    </main>
+</section>
 
 </body>
 </html>
