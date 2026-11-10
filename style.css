@@ -4212,3 +4212,169 @@ body.has-image-lightbox {
         padding: 16px;
     }
 }
+
+/* =========================================
+   PERSONAL GLOBAL-CATALOG PROGRESS RESET
+   ========================================= */
+
+.catalog-heading-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+.catalog-progress-reset-button {
+    min-height: 40px;
+    padding: 9px 13px;
+    border: 1px solid rgba(220, 92, 92, 0.48);
+    border-radius: 8px;
+    background: rgba(150, 42, 48, 0.16);
+    color: #ef9a9a;
+    font: inherit;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.catalog-progress-reset-button:hover {
+    border-color: rgba(235, 102, 102, 0.78);
+    background: rgba(170, 48, 54, 0.28);
+    color: #ffd0d0;
+}
+
+.catalog-progress-reset-dialog {
+    width: min(520px, calc(100vw - 32px));
+    max-width: 520px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.58);
+}
+
+.catalog-progress-reset-dialog::backdrop {
+    background: rgba(3, 8, 13, 0.78);
+    backdrop-filter: blur(4px);
+}
+
+.catalog-progress-reset-dialog-content {
+    padding: 25px;
+}
+
+.catalog-progress-reset-dialog h2 {
+    margin: 8px 0 10px;
+    font-size: 20px;
+}
+
+.catalog-progress-reset-dialog p {
+    margin: 0 0 14px;
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.65;
+}
+
+.catalog-progress-reset-warning {
+    padding: 13px 14px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: #0e1620;
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1.7;
+}
+
+.catalog-progress-reset-dialog .catalog-progress-reset-irreversible {
+    margin: 13px 0 18px;
+    color: #ef9a9a;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.catalog-progress-reset-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.catalog-progress-reset-actions button {
+    min-height: 39px;
+    padding: 9px 14px;
+    border-radius: 8px;
+    font: inherit;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.catalog-progress-reset-actions .secondary-button {
+    border: 1px solid var(--border);
+    background: var(--surface-light);
+    color: var(--text);
+}
+
+.catalog-progress-reset-actions .danger-button {
+    border: 1px solid #a93636;
+    background: #a93636;
+    color: #fff;
+}
+
+.catalog-progress-reset-actions button:disabled {
+    opacity: 0.55;
+    cursor: wait;
+}
+
+@media (max-width: 720px) {
+    .catalog-heading {
+        align-items: flex-start;
+    }
+
+    .catalog-heading-actions {
+        flex-direction: column-reverse;
+        align-items: flex-end;
+    }
+
+    .catalog-progress-reset-button {
+        max-width: 180px;
+        white-space: normal;
+        text-align: center;
+    }
+}
+
+@media (max-width: 520px) {
+    .catalog-heading {
+        flex-direction: column;
+    }
+
+    .catalog-heading-actions {
+        width: 100%;
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .catalog-progress-reset-dialog-content {
+        padding: 19px;
+    }
+
+    .catalog-progress-reset-actions {
+        flex-direction: column-reverse;
+    }
+
+    .catalog-progress-reset-actions button {
+        width: 100%;
+    }
+}
+
+.catalog-progress-reset-status {
+    margin: 0 0 15px;
+    padding: 10px 12px;
+    border: 1px solid rgba(220, 92, 92, 0.4);
+    border-radius: 8px;
+    background: rgba(150, 42, 48, 0.14);
+    color: #f0aaaa;
+    font-size: 11px;
+    line-height: 1.55;
+}

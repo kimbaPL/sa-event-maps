@@ -171,7 +171,12 @@ UUIDs are internal only. No visible location numbering.
         locationSort: byId("location-sort"),
         catalogList: byId("catalog-list"),
         catalogLocationCount: byId("catalog-location-count"),
-        catalogStatus: byId("catalog-status")
+        catalogStatus: byId("catalog-status"),
+        clearCatalogProgress: byId("clear-catalog-progress"),
+        clearCatalogProgressDialog: byId("clear-catalog-progress-dialog"),
+        cancelClearCatalogProgress: byId("cancel-clear-catalog-progress"),
+        confirmClearCatalogProgress: byId("confirm-clear-catalog-progress"),
+        clearCatalogProgressStatus: byId("clear-catalog-progress-status")
     };
 
     const form = {
@@ -215,7 +220,8 @@ UUIDs are internal only. No visible location numbering.
         events: [],
         eventLocations: [],
         categories: [],
-        playerProgress: []
+        playerProgress: [],
+        playerCatalogProgress: []
     };
 
     let currentUser = null;
@@ -450,11 +456,24 @@ UUIDs are internal only. No visible location numbering.
         };
     }
 
+    function getCatalogProgress(locationId) {
+        return database.playerCatalogProgress.find(
+            item => item.userId === currentUser?.id && item.locationId === locationId
+        ) || {
+            userId: currentUser?.id || null,
+            locationId,
+            status: "not_found",
+            needsCheck: false
+        };
+    }
+
     function getProgressContextEventId() {
         if (currentFilterId !== "all") {
             return currentFilterId;
         }
 
+        // In the global catalog this selector is only for assigning/removing
+        // a location from an event. Global-catalog progress is independent.
         return elements.assignEventSelect.value || null;
     }
 
@@ -715,13 +734,43 @@ UUIDs are internal only. No visible location numbering.
         const contextEvent = contextEventId ? getEventById(contextEventId) : null;
         const contextLabel = byId("progress-context-label");
         const help = byId("progress-help");
+        const heading = progressPanel.querySelector(".eyebrow");
+        if (heading) {
+            heading.textContent = currentFilterId === "all"
+                ? "POSTĘP W KATALOGU"
+                : "POSTĘP W WYDARZENIU";
+        }
 
-        if (!contextEvent || location.isReference) {
+        if (location.isReference) {
             progressSelect.disabled = true;
             needsCheckInput.disabled = true;
-            contextLabel.textContent = location.isReference
-                ? "Punkt kontrolny — nie jest znajdźką katalogową."
-                : "Wybierz wydarzenie, aby zmienić status.";
+            contextLabel.textContent = "Punkt kontrolny — nie jest znajdźką katalogową.";
+            help.textContent = "Punkty kontrolne nie mają zapisywanego postępu.";
+            elements.selectedStatus.textContent = "—";
+            return;
+        }
+
+        if (currentFilterId === "all") {
+            const progress = getCatalogProgress(location.id);
+            progressSelect.value = progress.status || "not_found";
+            needsCheckInput.checked = Boolean(progress.needsCheck);
+            progressSelect.disabled = Boolean(location.isArchived);
+            needsCheckInput.disabled = Boolean(location.isArchived);
+
+            contextLabel.textContent = "Wszystkie respy znajdziek";
+            help.textContent = location.isArchived
+                ? "Zarchiwizowana lokalizacja jest tylko do odczytu."
+                : "Te statusy są wyłącznie Twoje. Nie przypisują znajdźki do wydarzenia ani nie zmieniają jego postępu.";
+
+            elements.selectedStatus.textContent =
+                `${PROGRESS_STATUS[progress.status]?.label || "Nieznaleziona"}${progress.needsCheck ? " · Do sprawdzenia" : ""}`;
+            return;
+        }
+
+        if (!contextEvent) {
+            progressSelect.disabled = true;
+            needsCheckInput.disabled = true;
+            contextLabel.textContent = "Wybierz wydarzenie, aby zmienić status.";
             help.textContent = "Postęp jest zapisywany osobno dla każdego wydarzenia.";
             elements.selectedStatus.textContent = "—";
             return;
@@ -747,10 +796,48 @@ UUIDs are internal only. No visible location numbering.
 
     async function saveSelectedProgress() {
         const location = getLocationById(selectedLocationId);
-        const eventId = getProgressContextEventId();
-        const event = eventId ? getEventById(eventId) : null;
+        if (!location || !progressSelect || !needsCheckInput) return;
 
-        if (!location || !event || !progressSelect || !needsCheckInput) return;
+        const status = progressSelect.value;
+        const needsCheck = needsCheckInput.checked;
+
+        if (currentFilterId === "all") {
+            if (location.isArchived) {
+                setEditorStatus("Nie można zmieniać postępu zarchiwizowanej lokalizacji.");
+                renderProgressEditor(location);
+                return;
+            }
+
+            try {
+                const saved = await dataApi.setCatalogProgress(
+                    location.id,
+                    status,
+                    needsCheck
+                );
+
+                database.playerCatalogProgress = database.playerCatalogProgress.filter(
+                    item => !(item.userId === saved.userId && item.locationId === saved.locationId)
+                );
+                database.playerCatalogProgress.push(saved);
+
+                renderProgressEditor(location);
+                renderLocationMarkers();
+                renderCatalog();
+
+                setEditorStatus(
+                    `Zapisano status „${PROGRESS_STATUS[status].label}” w katalogu „Wszystkie respy”.`
+                );
+            } catch (error) {
+                console.error("SA Event Maps: Nie udało się zapisać postępu katalogowego.", error);
+                setEditorStatus(error.message || "Nie udało się zapisać statusu katalogowego.");
+                renderProgressEditor(location);
+            }
+            return;
+        }
+
+        const eventId = currentFilterId;
+        const event = getEventById(eventId);
+        if (!event) return;
 
         if (event.status === "archived") {
             setEditorStatus("Nie można zmieniać postępu w zarchiwizowanym wydarzeniu.");
@@ -758,21 +845,7 @@ UUIDs are internal only. No visible location numbering.
             return;
         }
 
-        const status = progressSelect.value;
-        const needsCheck = needsCheckInput.checked;
-
         try {
-            // In the global "Wszystkie respy" view, a "Znaleziono"
-            // status also adds the location to the chosen event.
-            if (
-                status === "found" &&
-                currentFilterId === "all" &&
-                !locationBelongsToEvent(location.id, event.id)
-            ) {
-                const relation = await dataApi.assignLocationToEvent(event.id, location.id);
-                database.eventLocations.push(relation);
-            }
-
             const saved = await dataApi.setProgress(
                 event.id,
                 location.id,
@@ -1059,6 +1132,83 @@ UUIDs are internal only. No visible location numbering.
     elements.deleteEvent.addEventListener("click", () => void archiveCurrentEvent());
 
     // ================================================
+    // PERSONAL PROGRESS RESET — GLOBAL CATALOG ONLY
+    // ================================================
+
+    elements.clearCatalogProgress.addEventListener("click", () => {
+        if (!dataReady || !currentUser || currentFilterId !== "all") return;
+
+        elements.clearCatalogProgressStatus.hidden = true;
+        elements.clearCatalogProgressStatus.textContent = "";
+        if (typeof elements.clearCatalogProgressDialog.showModal === "function") {
+            elements.clearCatalogProgressDialog.showModal();
+        } else {
+            const confirmed = window.confirm(
+                "Czy na pewno usunąć wszystkie Twoje statusy w katalogu „Wszystkie respy”?\n\n" +
+                "Postępy w wydarzeniach, pinezki, zdjęcia i opisy pozostaną bez zmian. Operacji nie można cofnąć."
+            );
+            if (confirmed) void clearMyCatalogProgress();
+        }
+    });
+
+    elements.cancelClearCatalogProgress.addEventListener("click", () => {
+        if (!elements.confirmClearCatalogProgress.disabled) {
+            elements.clearCatalogProgressDialog.close();
+        }
+    });
+
+    elements.clearCatalogProgressDialog.addEventListener("cancel", event => {
+        if (elements.confirmClearCatalogProgress.disabled) event.preventDefault();
+    });
+
+    elements.clearCatalogProgressDialog.addEventListener("click", event => {
+        if (event.target === elements.clearCatalogProgressDialog
+            && !elements.confirmClearCatalogProgress.disabled) {
+            elements.clearCatalogProgressDialog.close();
+        }
+    });
+
+    async function clearMyCatalogProgress() {
+        if (!dataReady || !currentUser || currentFilterId !== "all") return;
+
+        const confirmButton = elements.confirmClearCatalogProgress;
+        confirmButton.disabled = true;
+        confirmButton.textContent = "Usuwanie...";
+        elements.cancelClearCatalogProgress.disabled = true;
+        elements.clearCatalogProgress.disabled = true;
+
+        try {
+            const result = await dataApi.clearCatalogProgress();
+            database.playerCatalogProgress = database.playerCatalogProgress.filter(
+                item => item.userId !== currentUser.id
+            );
+
+            if (elements.clearCatalogProgressDialog.open) {
+                elements.clearCatalogProgressDialog.close();
+            }
+
+            renderApplication();
+            setEditorStatus(
+                `Usunięto ${result.deletedCount} zapisanych statusów w katalogu „Wszystkie respy”. Postępy w wydarzeniach pozostały bez zmian.`
+            );
+        } catch (error) {
+            console.error("SA Event Maps: Nie udało się wyczyścić postępów katalogowych.", error);
+            elements.clearCatalogProgressStatus.textContent = error.message || "Nie udało się usunąć postępów katalogowych.";
+            elements.clearCatalogProgressStatus.hidden = false;
+            setEditorStatus(error.message || "Nie udało się usunąć postępów katalogowych.");
+        } finally {
+            confirmButton.disabled = false;
+            confirmButton.textContent = "Tak, usuń postępy";
+            elements.cancelClearCatalogProgress.disabled = false;
+            elements.clearCatalogProgress.disabled = false;
+        }
+    }
+
+    elements.confirmClearCatalogProgress.addEventListener("click", () => {
+        void clearMyCatalogProgress();
+    });
+
+    // ================================================
     // 11. EVENT FILTER AND ASSIGNMENTS
     // ================================================
 
@@ -1165,11 +1315,9 @@ UUIDs are internal only. No visible location numbering.
     }
 
     function createMarkerIcon(location) {
-        const eventId = getProgressContextEventId();
-        const progress = eventId ? getProgress(eventId, location.id) : {
-            status: "not_found",
-            needsCheck: false
-        };
+        const progress = currentFilterId === "all"
+            ? getCatalogProgress(location.id)
+            : getProgress(currentFilterId, location.id);
 
         const status = PROGRESS_STATUS[progress.status] || PROGRESS_STATUS.not_found;
         const classes = [
@@ -1774,7 +1922,7 @@ UUIDs are internal only. No visible location numbering.
             return;
         }
 
-        const eventId = getProgressContextEventId();
+        const eventId = currentFilterId === "all" ? null : currentFilterId;
 
         locations.forEach(location => {
             const row = document.createElement("div");
@@ -1782,9 +1930,9 @@ UUIDs are internal only. No visible location numbering.
             row.tabIndex = 0;
             row.setAttribute("role", "button");
 
-            const progress = eventId
-                ? getProgress(eventId, location.id)
-                : { status: "not_found", needsCheck: false };
+            const progress = currentFilterId === "all"
+                ? getCatalogProgress(location.id)
+                : getProgress(eventId, location.id);
 
             const statusCell = document.createElement("span");
             statusCell.className = "catalog-status-cell";
@@ -1854,6 +2002,7 @@ UUIDs are internal only. No visible location numbering.
 
         renderEventSelectors();
         updateGlobalCounters();
+        elements.clearCatalogProgress.hidden = !dataReady || !currentUser || currentFilterId !== "all";
 
         if (mapReady) {
             renderLocationMarkers();
@@ -2171,6 +2320,7 @@ UUIDs are internal only. No visible location numbering.
                 database.eventLocations = catalog.eventLocations;
                 database.categories = catalog.categories;
                 database.playerProgress = catalog.playerProgress;
+                database.playerCatalogProgress = catalog.playerCatalogProgress;
 
                 dataReady = true;
                 updateImageUploadAvailability();
@@ -2188,7 +2338,8 @@ UUIDs are internal only. No visible location numbering.
                     events: database.events.length,
                     assignments: database.eventLocations.length,
                     categories: database.categories.length,
-                    progress: database.playerProgress.length
+                    progress: database.playerProgress.length,
+                    catalogProgress: database.playerCatalogProgress.length
                 });
             } catch (error) {
                 console.error("SA Event Maps: Nie udało się pobrać katalogu.", error);
@@ -2217,6 +2368,11 @@ UUIDs are internal only. No visible location numbering.
         database.eventLocations = [];
         database.categories = [];
         database.playerProgress = [];
+        database.playerCatalogProgress = [];
+        elements.clearCatalogProgress.hidden = true;
+        if (elements.clearCatalogProgressDialog.open) {
+            elements.clearCatalogProgressDialog.close();
+        }
 
         selectedLocationId = null;
         currentFilterId = "all";

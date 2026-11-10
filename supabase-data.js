@@ -301,6 +301,37 @@ The UI must not write directly to localStorage.
         return data;
     }
 
+    function validateCatalogProgressBackup(backup) {
+        const rows = backup?.data?.player_catalog_progress;
+        if (rows === undefined) return []; // Backups created before the catalog-progress feature remain valid.
+        if (!Array.isArray(rows)) {
+            throw new Error("Kopia zawiera nieprawidłową listę postępów katalogowych.");
+        }
+
+        const allowedStatuses = new Set(["not_found", "found", "not_present", "uncertain"]);
+        const seen = new Set();
+        const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+        for (const row of rows) {
+            if (!row || !uuidPattern.test(String(row.user_id || "")) || !uuidPattern.test(String(row.location_id || ""))) {
+                throw new Error("Kopia zawiera postęp katalogowy bez prawidłowego użytkownika lub znajdźki.");
+            }
+            if (!allowedStatuses.has(row.status)) {
+                throw new Error("Kopia zawiera nieprawidłowy status postępu katalogowego.");
+            }
+            if (row.needs_check !== undefined && typeof row.needs_check !== "boolean") {
+                throw new Error("Kopia zawiera nieprawidłowe oznaczenie „Do sprawdzenia”.");
+            }
+            const key = `${row.user_id}:${row.location_id}`;
+            if (seen.has(key)) {
+                throw new Error("Kopia zawiera powtórzony status katalogowy dla tej samej osoby i znajdźki.");
+            }
+            seen.add(key);
+        }
+
+        return rows;
+    }
+
     async function getLocationImage(locationId) {
         if (!locationId) return null;
         const { data: image, error } = await supabase
@@ -411,6 +442,7 @@ The UI must not write directly to localStorage.
     async function previewOrganizationBackup(backup) {
         await requireAdmin();
         const { images, files } = validateBackupImages(backup, { requireBinary: true });
+        const catalogProgress = validateCatalogProgressBackup(backup);
         const sanitized = backupWithoutBinaryPayload(backup);
         const { data, error } = await supabase.rpc("admin_preview_organization_backup", {
             p_backup: sanitized
@@ -421,12 +453,14 @@ The UI must not write directly to localStorage.
         }
         data.counts.location_images = images.length;
         data.counts.storage_files = files.length;
+        data.counts.player_catalog_progress = catalogProgress.length;
         return data;
     }
 
     async function restoreOrganizationBackup(backup) {
         await requireAdmin();
         const { images, files } = validateBackupImages(backup, { requireBinary: true });
+        validateCatalogProgressBackup(backup);
         const sanitized = backupWithoutBinaryPayload(backup);
         const backupPaths = new Set(files.map(file => file.object_path));
         const locationIds = images.map(image => image.location_id);
@@ -657,6 +691,17 @@ The UI must not write directly to localStorage.
         };
     }
 
+    function mapCatalogProgress(row) {
+        return {
+            userId: row.user_id,
+            locationId: row.location_id,
+            status: row.status,
+            needsCheck: Boolean(row.needs_check),
+            createdAt: row.created_at,
+            updatedAt: row.updated_at
+        };
+    }
+
     async function loadCatalog() {
         const user = await getUserContext();
 
@@ -665,7 +710,8 @@ The UI must not write directly to localStorage.
             eventRows,
             eventLocationRows,
             categoryRows,
-            progressRows
+            progressRows,
+            catalogProgressRows
         ] = await Promise.all([
             fetchAllRows(
                 "locations",
@@ -691,6 +737,11 @@ The UI must not write directly to localStorage.
                 "player_progress",
                 "user_id, event_id, location_id, status, needs_check, created_at, updated_at",
                 query => query.eq("user_id", user.id).order("updated_at", { ascending: false })
+            ),
+            fetchAllRows(
+                "player_catalog_progress",
+                "user_id, location_id, status, needs_check, created_at, updated_at",
+                query => query.eq("user_id", user.id).order("updated_at", { ascending: false })
             )
         ]);
 
@@ -700,7 +751,8 @@ The UI must not write directly to localStorage.
             events: eventRows.map(mapEvent),
             eventLocations: eventLocationRows.map(mapEventLocation),
             categories: categoryRows.map(mapCategory),
-            playerProgress: progressRows.map(mapProgress)
+            playerProgress: progressRows.map(mapProgress),
+            playerCatalogProgress: catalogProgressRows.map(mapCatalogProgress)
         };
 
         console.info("SA Event Maps: Pobrano dane z Supabase.", {
@@ -708,7 +760,8 @@ The UI must not write directly to localStorage.
             events: catalog.events.length,
             assignments: catalog.eventLocations.length,
             categories: catalog.categories.length,
-            playerProgress: catalog.playerProgress.length
+            playerProgress: catalog.playerProgress.length,
+            playerCatalogProgress: catalog.playerCatalogProgress.length
         });
 
         return catalog;
@@ -1188,6 +1241,45 @@ The UI must not write directly to localStorage.
         return mapProgress(data);
     }
 
+    async function setCatalogProgress(locationId, status, needsCheck) {
+        const user = await getUserContext();
+
+        if (!locationId) throw new Error("Brakuje identyfikatora znajdźki.");
+        if (!VALID_PROGRESS_STATUSES.has(status)) {
+            throw new Error("Nieprawidłowy status znajdźki.");
+        }
+
+        const now = new Date().toISOString();
+        const row = {
+            user_id: user.id,
+            location_id: locationId,
+            status,
+            needs_check: Boolean(needsCheck),
+            updated_at: now
+        };
+
+        const { data, error } = await supabase
+            .from("player_catalog_progress")
+            .upsert(row, { onConflict: "user_id,location_id" })
+            .select("user_id, location_id, status, needs_check, created_at, updated_at")
+            .single();
+
+        if (error) throwDatabaseError("player_catalog_progress", error);
+        return mapCatalogProgress(data);
+    }
+
+    async function clearCatalogProgress() {
+        const user = await getUserContext();
+        const { data, error, count } = await supabase
+            .from("player_catalog_progress")
+            .delete({ count: "exact" })
+            .eq("user_id", user.id)
+            .select("location_id");
+
+        if (error) throwDatabaseError("player_catalog_progress", error);
+        return { deletedCount: Number.isInteger(count) ? count : (data || []).length };
+    }
+
     async function listCategories() {
         await requireAdmin();
 
@@ -1326,6 +1418,8 @@ The UI must not write directly to localStorage.
         assignLocationToEvent,
         removeLocationFromEvent,
         setProgress,
+        setCatalogProgress,
+        clearCatalogProgress,
         listCategories,
         createCategory,
         updateCategory,

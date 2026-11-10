@@ -1083,13 +1083,26 @@
 
                 </div>
 
-                <div class="catalog-count">
+                <div class="catalog-heading-actions">
 
-                    <strong id="catalog-location-count">
-                        0
-                    </strong>
+                    <button
+                        id="clear-catalog-progress"
+                        class="catalog-progress-reset-button"
+                        type="button"
+                        hidden
+                    >
+                        Usuń wszystkie postępy
+                    </button>
 
-                    <span>lokalizacji</span>
+                    <div class="catalog-count">
+
+                        <strong id="catalog-location-count">
+                            0
+                        </strong>
+
+                        <span>lokalizacji</span>
+
+                    </div>
 
                 </div>
 
@@ -1687,6 +1700,25 @@
     <button id="close-location-image-lightbox" class="location-image-lightbox-close" type="button" aria-label="Zamknij podgląd">×</button>
     <img id="location-image-lightbox-img" alt="Pełny podgląd zdjęcia znajdźki">
 </div>
+
+<dialog id="clear-catalog-progress-dialog" class="catalog-progress-reset-dialog" aria-labelledby="clear-catalog-progress-title" aria-describedby="clear-catalog-progress-description">
+    <div class="catalog-progress-reset-dialog-content">
+        <div class="eyebrow">POTWIERDZENIE OPERACJI</div>
+        <h2 id="clear-catalog-progress-title">Usunąć wszystkie postępy?</h2>
+        <p id="clear-catalog-progress-description">
+            Czy na pewno chcesz wyczyścić wszystkie swoje statusy znajdziek w katalogu „Wszystkie respy”?
+        </p>
+        <div class="catalog-progress-reset-warning">
+            Operacja usunie wyłącznie Twoje statusy katalogowe, w tym oznaczenia „Znaleziono”, „Nie ma”, „Niepewne” i „Do sprawdzenia”. Nie usunie pinezek, zdjęć ani opisów i nie zmieni postępów w żadnym wydarzeniu.
+        </div>
+        <p class="catalog-progress-reset-irreversible">Tej operacji nie będzie można cofnąć.</p>
+        <div id="clear-catalog-progress-status" class="catalog-progress-reset-status" role="status" aria-live="polite" hidden></div>
+        <div class="catalog-progress-reset-actions">
+            <button id="cancel-clear-catalog-progress" type="button" class="secondary-button">Anuluj</button>
+            <button id="confirm-clear-catalog-progress" type="button" class="danger-button">Tak, usuń postępy</button>
+        </div>
+    </div>
+</dialog>
 
 </body>
 </html>

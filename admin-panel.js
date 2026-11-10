@@ -553,7 +553,8 @@ functions or the admin-only data layer. This module owns only UI.
             locations: "Lokalizacje / znajdźki",
             event_locations: "Przypisania do wydarzeń",
             categories: "Kategorie",
-            player_progress: "Wpisy postępu graczy",
+            player_progress: "Postępy w wydarzeniach",
+            player_catalog_progress: "Postępy w katalogu Wszystkie respy",
             activity_log: "Historia aktywności",
             location_images: "Zdjęcia znajdziek"
         };
@@ -709,7 +710,7 @@ functions or the admin-only data layer. This module owns only UI.
             clearBackupPreview();
             backupFileInput.value = "";
             setBackupStatus(
-                `Przywracanie zakończone. Wydarzenia: ${result.events_processed}; lokalizacje: ${result.locations_processed}; przypisania: ${result.assignments_processed}; kategorie: ${result.categories_processed}; postępy: ${result.progress_rows_processed}; historia: ${result.activity_log_rows_processed}; zdjęcia: ${result.images_processed || 0}. Rangi i właściciel projektu pozostały bez zmian.${result.orphaned_storage_files ? ` Uwaga: nie udało się usunąć ${result.orphaned_storage_files} zastąpionych plików ze Storage.` : ""}`,
+                `Przywracanie zakończone. Wydarzenia: ${result.events_processed}; lokalizacje: ${result.locations_processed}; przypisania: ${result.assignments_processed}; kategorie: ${result.categories_processed}; postępy w wydarzeniach: ${result.progress_rows_processed}; postępy w katalogu: ${result.catalog_progress_rows_processed || 0}; historia: ${result.activity_log_rows_processed}; zdjęcia: ${result.images_processed || 0}. Rangi i właściciel projektu pozostały bez zmian.${result.orphaned_storage_files ? ` Uwaga: nie udało się usunąć ${result.orphaned_storage_files} zastąpionych plików ze Storage.` : ""}`,
                 result.orphaned_storage_files ? "error" : "success"
             );
         } catch (error) {
