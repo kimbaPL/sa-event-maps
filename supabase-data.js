@@ -34,6 +34,40 @@ The UI must not write directly to localStorage.
         throw new Error(error?.message || `Nie udało się wykonać operacji na tabeli ${table}.`);
     }
 
+    async function exportOrganizationBackup() {
+        await requireAdmin();
+        const { data, error } = await supabase.rpc("admin_export_organization_backup");
+        if (error) throwDatabaseError("admin_export_organization_backup", error);
+        if (!data || data.schema !== "sa-event-maps-organization-backup" || !data.data) {
+            throw new Error("Supabase zwrócił nieprawidłową strukturę kopii organizacji.");
+        }
+        return data;
+    }
+
+    async function previewOrganizationBackup(backup) {
+        await requireAdmin();
+        const { data, error } = await supabase.rpc("admin_preview_organization_backup", {
+            p_backup: backup
+        });
+        if (error) throwDatabaseError("admin_preview_organization_backup", error);
+        if (!data || typeof data.can_restore !== "boolean" || !data.counts) {
+            throw new Error("Nie udało się uzyskać prawidłowego podglądu kopii.");
+        }
+        return data;
+    }
+
+    async function restoreOrganizationBackup(backup) {
+        await requireAdmin();
+        const { data, error } = await supabase.rpc("admin_restore_organization_backup", {
+            p_backup: backup
+        });
+        if (error) throwDatabaseError("admin_restore_organization_backup", error);
+        if (!data || data.restore_mode !== "merge") {
+            throw new Error("Supabase nie potwierdził prawidłowego przywrócenia kopii.");
+        }
+        return data;
+    }
+
     async function getUserContext() {
         const { data: userData, error: userError } = await supabase.auth.getUser();
 
@@ -829,6 +863,9 @@ The UI must not write directly to localStorage.
     window.saEventMapsData = Object.freeze({
         getUserContext,
         loadCatalog,
+        exportOrganizationBackup,
+        previewOrganizationBackup,
+        restoreOrganizationBackup,
         createLocation,
         updateLocation,
         setLocationPinned,

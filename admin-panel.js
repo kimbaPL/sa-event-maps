@@ -92,6 +92,18 @@ functions or the admin-only data layer. This module owns only UI.
     const locationsList = byId("admin-locations-list");
     const locationStatus = byId("admin-location-status");
 
+    const createBackupButton = byId("admin-create-backup");
+    const backupFileInput = byId("admin-backup-file");
+    const previewBackupButton = byId("admin-preview-backup");
+    const backupStatus = byId("admin-backup-status");
+    const backupPreviewCard = byId("admin-backup-preview");
+    const backupPreviewDescription = byId("admin-backup-preview-description");
+    const backupPreviewState = byId("admin-backup-preview-state");
+    const backupCounts = byId("admin-backup-counts");
+    const backupUnmatched = byId("admin-backup-unmatched");
+    const backupEmailMatches = byId("admin-backup-email-matches");
+    const restoreBackupButton = byId("admin-restore-backup");
+
     const requiredElements = [
         supabase,
         dataApi,
@@ -165,7 +177,18 @@ functions or the admin-only data layer. This module owns only UI.
         refreshLocationsButton,
         locationsCount,
         locationsList,
-        locationStatus
+        locationStatus,
+        createBackupButton,
+        backupFileInput,
+        previewBackupButton,
+        backupStatus,
+        backupPreviewCard,
+        backupPreviewDescription,
+        backupPreviewState,
+        backupCounts,
+        backupUnmatched,
+        backupEmailMatches,
+        restoreBackupButton
     ];
 
     if (requiredElements.some(element => !element)) {
@@ -189,12 +212,15 @@ functions or the admin-only data layer. This module owns only UI.
     let locationReturnEventId = null;
     let activeSection = "users";
     let mapScrollPosition = 0;
+    let selectedBackup = null;
+    let backupPreviewResult = null;
 
     const sectionTitles = {
         users: "Użytkownicy i uprawnienia",
         events: "Wydarzenia",
         categories: "Kategorie",
         locations: "Pinezki i lokalizacje",
+        backup: "Kopie zapasowe",
         settings: "Ustawienia globalne",
         help: "Instrukcje i regulamin"
     };
@@ -254,6 +280,8 @@ functions or the admin-only data layer. This module owns only UI.
             eventAssignedLocations.replaceChildren();
             eventsCount.textContent = "—";
             locationsCount.textContent = "—";
+            clearBackupPreview();
+            backupFileInput.value = "";
         }
     }
 
@@ -355,6 +383,273 @@ functions or the admin-only data layer. This module owns only UI.
             console.error("SA Event Maps: Odmowa dostępu do panelu.", error);
             setStatus(error.message || "Brak dostępu do panelu administracyjnego.", "error");
             setAdminAccess(false);
+        }
+    }
+
+    function setBackupStatus(message, type = "info") {
+        backupStatus.textContent = String(message || "");
+        backupStatus.dataset.state = type;
+    }
+
+    function getCurrentProjectRef() {
+        const configuredUrl = String(supabase?.supabaseUrl || "");
+        let hostname = "";
+        try {
+            hostname = new URL(configuredUrl).hostname;
+        } catch {
+            throw new Error("Nie udało się odczytać identyfikatora projektu Supabase.");
+        }
+        const projectRef = hostname.split(".")[0];
+        if (!projectRef || !hostname.endsWith(".supabase.co")) {
+            throw new Error("Adres Supabase nie wygląda na prawidłowy projekt.");
+        }
+        return projectRef;
+    }
+
+    async function sha256Hex(value) {
+        if (!window.crypto?.subtle) {
+            throw new Error("Ta przeglądarka nie udostępnia kontroli integralności SHA-256. Otwórz stronę przez HTTPS.");
+        }
+        const bytes = new TextEncoder().encode(JSON.stringify(value));
+        const digest = await window.crypto.subtle.digest("SHA-256", bytes);
+        return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+    }
+
+    function formatBackupBytes(bytes) {
+        if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+        const units = ["B", "KB", "MB", "GB"];
+        const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+        return `${(bytes / (1024 ** index)).toFixed(index === 0 ? 0 : 2)} ${units[index]}`;
+    }
+
+    function clearBackupPreview() {
+        selectedBackup = null;
+        backupPreviewResult = null;
+        backupPreviewCard.hidden = true;
+        backupPreviewButton.disabled = !backupFileInput.files?.length;
+        restoreBackupButton.disabled = true;
+        backupCounts.replaceChildren();
+        backupUnmatched.replaceChildren();
+        backupUnmatched.hidden = true;
+        backupEmailMatches.replaceChildren();
+        backupEmailMatches.hidden = true;
+        backupPreviewState.textContent = "Oczekuje na kontrolę";
+        backupPreviewState.className = "admin-status-pill";
+    }
+
+    async function createOrganizationBackupFile() {
+        createBackupButton.disabled = true;
+        createBackupButton.textContent = "Tworzenie kopii…";
+        setBackupStatus("Pobieranie pełnego zestawu danych organizacji z Supabase…", "loading");
+
+        try {
+            await getFreshAdminContext();
+            const backup = await dataApi.exportOrganizationBackup();
+            backup.project_ref = getCurrentProjectRef();
+            backup.integrity = {
+                algorithm: "SHA-256",
+                digest: await sha256Hex(backup)
+            };
+
+            const json = JSON.stringify(backup, null, 2);
+            const blob = new Blob([json], { type: "application/json;charset=utf-8" });
+            const maxBytes = 100 * 1024 * 1024;
+            if (blob.size > maxBytes) {
+                throw new Error(`Kopia ma ${formatBackupBytes(blob.size)} i przekracza limit ${formatBackupBytes(maxBytes)} tej wersji. Nie zapisano niekompletnej kopii.`);
+            }
+            const objectUrl = URL.createObjectURL(blob);
+            const anchor = document.createElement("a");
+            const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+            anchor.href = objectUrl;
+            anchor.download = `sa-event-maps-backup-${timestamp}.json`;
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+            window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+
+            const counts = Object.entries(backup.data).map(([key, value]) => `${key}: ${Array.isArray(value) ? value.length : 0}`).join(" · ");
+            setBackupStatus(`Kopia została przygotowana i pobrana (${formatBackupBytes(blob.size)}). ${counts}`, "success");
+        } catch (error) {
+            console.error("SA Event Maps: Nie udało się utworzyć pełnej kopii.", error);
+            setBackupStatus(error.message || "Nie udało się utworzyć kopii organizacji.", "error");
+        } finally {
+            createBackupButton.disabled = false;
+            createBackupButton.textContent = "Utwórz i pobierz kopię";
+        }
+    }
+
+    function renderBackupPreview(preview, fileName) {
+        const labels = {
+            accounts: "Konta użytkowników",
+            events: "Wydarzenia",
+            locations: "Lokalizacje / znajdźki",
+            event_locations: "Przypisania do wydarzeń",
+            categories: "Kategorie",
+            player_progress: "Wpisy postępu graczy",
+            activity_log: "Historia aktywności"
+        };
+
+        backupCounts.replaceChildren();
+        for (const [key, label] of Object.entries(labels)) {
+            const item = document.createElement("div");
+            item.className = "admin-backup-count-item";
+            const name = document.createElement("span");
+            name.textContent = label;
+            const value = document.createElement("strong");
+            value.textContent = String(preview.counts?.[key] ?? 0);
+            item.append(name, value);
+            backupCounts.appendChild(item);
+        }
+
+        const emailMatches = Array.isArray(preview.email_fallback_accounts)
+            ? preview.email_fallback_accounts
+            : [];
+        backupEmailMatches.replaceChildren();
+        backupEmailMatches.hidden = emailMatches.length === 0;
+        if (emailMatches.length > 0) {
+            const heading = document.createElement("h4");
+            heading.textContent = "Konta dopasowane po adresie e-mail";
+            const explanation = document.createElement("p");
+            explanation.textContent = "Identyfikatory Auth tych kont różnią się od zapisanych w kopii. Przed przywróceniem sprawdź, czy każdy adres e-mail należy do tej samej osoby.";
+            const list = document.createElement("ul");
+            for (const account of emailMatches) {
+                const item = document.createElement("li");
+                item.textContent = `${account.email || "Brak e-maila"} — ${account.display_name || "Gracz"}`;
+                list.appendChild(item);
+            }
+            backupEmailMatches.append(heading, explanation, list);
+        }
+
+        const unmatched = Array.isArray(preview.unmatched_progress_accounts)
+            ? preview.unmatched_progress_accounts
+            : [];
+        backupUnmatched.replaceChildren();
+        backupUnmatched.hidden = unmatched.length === 0;
+        if (unmatched.length > 0) {
+            const heading = document.createElement("h4");
+            heading.textContent = "Nie znaleziono kont z zapisanym postępem";
+            const explanation = document.createElement("p");
+            explanation.textContent = "Przed przywróceniem te konta muszą istnieć w Supabase pod tym samym adresem e-mail lub identyfikatorem. Import został zablokowany, aby nie zgubić ich postępów.";
+            const list = document.createElement("ul");
+            for (const account of unmatched) {
+                const item = document.createElement("li");
+                const identity = account.email || account.display_name || account.user_id;
+                item.textContent = `${identity} — ${account.progress_rows} wpisów postępu`;
+                list.appendChild(item);
+            }
+            backupUnmatched.append(heading, explanation, list);
+        }
+
+        backupPreviewDescription.textContent = `${fileName} · dopasowano ${preview.matched_accounts} z ${preview.counts.accounts} kont z kopii.`;
+        backupPreviewState.textContent = preview.can_restore ? "Kopia gotowa do przywrócenia" : "Wymaga dopasowania kont";
+        backupPreviewState.className = preview.can_restore
+            ? "admin-status-pill is-active"
+            : "admin-status-pill is-archived";
+        restoreBackupButton.disabled = !preview.can_restore;
+        backupPreviewCard.hidden = false;
+    }
+
+    async function previewOrganizationBackupFile() {
+        clearBackupPreview();
+        const file = backupFileInput.files?.[0];
+        if (!file) {
+            setBackupStatus("Najpierw wybierz plik kopii zapasowej.", "error");
+            return;
+        }
+        const maxBytes = 100 * 1024 * 1024;
+        if (file.size <= 0 || file.size > maxBytes) {
+            setBackupStatus(`Plik musi mieć rozmiar od 1 B do ${formatBackupBytes(maxBytes)}.`, "error");
+            return;
+        }
+
+        previewBackupButton.disabled = true;
+        previewBackupButton.textContent = "Sprawdzanie…";
+        setBackupStatus("Sprawdzanie formatu, projektu i sumy kontrolnej kopii…", "loading");
+
+        try {
+            const parsed = JSON.parse(await file.text());
+            if (!parsed || parsed.schema !== "sa-event-maps-organization-backup" || parsed.version !== 1) {
+                throw new Error("Wybrany plik nie jest obsługiwaną kopią organizacji SA Event Maps.");
+            }
+            if (parsed.project_ref !== getCurrentProjectRef()) {
+                throw new Error("Ta kopia pochodzi z innego projektu Supabase. Przywracanie w tym projekcie zostało zablokowane.");
+            }
+            if (!parsed.integrity || parsed.integrity.algorithm !== "SHA-256" || typeof parsed.integrity.digest !== "string") {
+                throw new Error("Kopia nie zawiera prawidłowej sumy kontrolnej. Wybierz oryginalny, niezmieniony plik kopii.");
+            }
+
+            const unsignedBackup = { ...parsed };
+            delete unsignedBackup.integrity;
+            const actualDigest = await sha256Hex(unsignedBackup);
+            if (actualDigest !== parsed.integrity.digest.toLowerCase()) {
+                throw new Error("Suma kontrolna kopii jest niezgodna. Plik mógł zostać uszkodzony lub zmieniony.");
+            }
+
+            await getFreshAdminContext();
+            const preview = await dataApi.previewOrganizationBackup(parsed);
+            selectedBackup = parsed;
+            backupPreviewResult = preview;
+            renderBackupPreview(preview, file.name);
+
+            if (preview.can_restore) {
+                setBackupStatus("Kontrola zakończona. Kopia jest zgodna z tym projektem i można ją przywrócić.", "success");
+            } else {
+                setBackupStatus("Kopia jest poprawna, ale nie wszystkie konta z zapisanym postępem mają odpowiedniki w obecnym projekcie. Przywracanie pozostaje zablokowane.", "error");
+            }
+        } catch (error) {
+            console.error("SA Event Maps: Kontrola kopii nie powiodła się.", error);
+            selectedBackup = null;
+            backupPreviewResult = null;
+            setBackupStatus(error instanceof SyntaxError ? "Plik nie jest prawidłowym JSON-em." : (error.message || "Nie udało się sprawdzić kopii."), "error");
+        } finally {
+            previewBackupButton.disabled = !backupFileInput.files?.length;
+            previewBackupButton.textContent = "Sprawdź kopię";
+        }
+    }
+
+    async function restoreOrganizationBackupFile() {
+        if (!selectedBackup || !backupPreviewResult?.can_restore) return;
+        const emailMatches = Array.isArray(backupPreviewResult.email_fallback_accounts)
+            ? backupPreviewResult.email_fallback_accounts
+            : [];
+        const emailWarning = emailMatches.length > 0
+            ? `\n\nUwaga: ${emailMatches.length} konto/konta dopasowano po e-mailu, a nie po identyfikatorze Auth. Sprawdź listę w podglądzie przed kontynuacją.`
+            : "";
+        const confirmation = window.prompt(
+            "Przywrócenie połączy dane z kopii z obecną bazą. Rekordy zawarte w kopii zostaną dodane lub zaktualizowane; pozostałe rekordy nie zostaną usunięte." + emailWarning + "\n\nAby potwierdzić, wpisz dokładnie: PRZYWRÓĆ DANE"
+        );
+        if (confirmation !== "PRZYWRÓĆ DANE") {
+            setBackupStatus("Przywracanie anulowane. Baza nie została zmieniona.", "info");
+            return;
+        }
+
+        restoreBackupButton.disabled = true;
+        createBackupButton.disabled = true;
+        previewBackupButton.disabled = true;
+        setBackupStatus("Przywracanie danych w jednej transakcji Supabase… Nie zamykaj tej strony.", "loading");
+
+        try {
+            await getFreshAdminContext();
+            const result = await dataApi.restoreOrganizationBackup(selectedBackup);
+            notifyCatalogChanged();
+            hasLoadedManagementData = false;
+            hasLoadedCategories = false;
+            hasLoadedUsers = false;
+            await getFreshAdminContext();
+            await loadUsers();
+            clearBackupPreview();
+            backupFileInput.value = "";
+            setBackupStatus(
+                `Przywracanie zakończone. Wydarzenia: ${result.events_processed}; lokalizacje: ${result.locations_processed}; przypisania: ${result.assignments_processed}; kategorie: ${result.categories_processed}; wpisy postępu: ${result.progress_rows_processed}; wpisy historii: ${result.activity_log_rows_processed}. Rangi i właściciel projektu pozostały bez zmian.`,
+                "success"
+            );
+        } catch (error) {
+            console.error("SA Event Maps: Przywracanie kopii nie powiodło się.", error);
+            setBackupStatus(error.message || "Nie udało się przywrócić kopii. Transakcja została wycofana.", "error");
+            restoreBackupButton.disabled = !backupPreviewResult?.can_restore;
+        } finally {
+            createBackupButton.disabled = false;
+            previewBackupButton.disabled = !backupFileInput.files?.length;
         }
     }
 
@@ -1514,6 +1809,15 @@ functions or the admin-only data layer. This module owns only UI.
         if (!button || button.disabled) return;
         void handleLocationAction(button.dataset.locationAction, button.dataset.recordId);
     });
+
+    createBackupButton.addEventListener("click", () => void createOrganizationBackupFile());
+    backupFileInput.addEventListener("change", () => {
+        clearBackupPreview();
+        const file = backupFileInput.files?.[0];
+        setBackupStatus(file ? `Wybrano plik: ${file.name} (${formatBackupBytes(file.size)}). Kliknij „Sprawdź kopię”, aby zweryfikować zawartość.` : "Nie wybrano pliku kopii.");
+    });
+    previewBackupButton.addEventListener("click", () => void previewOrganizationBackupFile());
+    restoreBackupButton.addEventListener("click", () => void restoreOrganizationBackupFile());
 
     supabase.auth.onAuthStateChange((_event, session) => {
         window.setTimeout(() => {

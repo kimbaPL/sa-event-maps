@@ -3586,3 +3586,259 @@ textarea {
         flex: 1 1 auto;
     }
 }
+
+/* =====================================================
+   ORGANIZATION BACKUP AND RESTORE
+===================================================== */
+
+.admin-backup-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    margin: 20px 0 22px;
+}
+
+.admin-backup-card {
+    min-width: 0;
+    padding: 22px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+}
+
+.admin-backup-card-icon {
+    width: 40px;
+    height: 40px;
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(101, 214, 163, 0.25);
+    border-radius: 10px;
+    background: rgba(101, 214, 163, 0.08);
+    color: var(--accent);
+    font-size: 22px;
+    font-weight: 800;
+}
+
+.admin-backup-card h3,
+.admin-backup-notes h3 {
+    margin: 0;
+    color: var(--text);
+    font-size: 15px;
+}
+
+.admin-backup-card p {
+    margin: 0 0 5px;
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.65;
+}
+
+.admin-backup-card > button {
+    margin-top: auto;
+}
+
+.admin-backup-file-field {
+    width: 100%;
+    margin: 0 0 4px;
+}
+
+.admin-backup-file-field input[type="file"] {
+    width: 100%;
+    min-height: 42px;
+    padding: 9px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #0d151f;
+    color: var(--text-muted);
+    font-size: 11px;
+}
+
+.admin-backup-preview {
+    margin: 20px 0;
+    padding: 22px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: rgba(17, 25, 35, 0.8);
+}
+
+.admin-backup-preview[hidden] {
+    display: none !important;
+}
+
+.admin-backup-counts {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 18px;
+}
+
+.admin-backup-count-item {
+    min-width: 0;
+    padding: 13px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    border: 1px solid rgba(55, 72, 91, 0.8);
+    border-radius: 9px;
+    background: rgba(12, 19, 28, 0.65);
+}
+
+.admin-backup-count-item span {
+    color: var(--text-muted);
+    font-size: 10px;
+    line-height: 1.45;
+}
+
+.admin-backup-count-item strong {
+    color: var(--text);
+    font-size: 21px;
+    font-variant-numeric: tabular-nums;
+}
+
+
+.admin-backup-email-matches {
+    margin-top: 17px;
+    padding: 15px 17px;
+    border: 1px solid rgba(101, 214, 163, 0.28);
+    border-radius: 9px;
+    background: rgba(101, 214, 163, 0.045);
+}
+
+.admin-backup-email-matches[hidden] {
+    display: none !important;
+}
+
+.admin-backup-email-matches h4 {
+    margin: 0 0 7px;
+    color: var(--accent, #65d6a3);
+    font-size: 12px;
+}
+
+.admin-backup-email-matches p,
+.admin-backup-email-matches li {
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1.6;
+}
+
+.admin-backup-email-matches p {
+    margin: 0 0 8px;
+}
+
+.admin-backup-email-matches ul {
+    margin: 0;
+    padding-left: 19px;
+}
+
+.admin-backup-unmatched {
+    margin-top: 17px;
+    padding: 15px 17px;
+    border: 1px solid rgba(237, 119, 119, 0.35);
+    border-radius: 9px;
+    background: rgba(237, 119, 119, 0.06);
+}
+
+.admin-backup-unmatched h4 {
+    margin: 0 0 7px;
+    color: #f09a9a;
+    font-size: 12px;
+}
+
+.admin-backup-unmatched p,
+.admin-backup-unmatched li {
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1.6;
+}
+
+.admin-backup-unmatched p {
+    margin: 0 0 8px;
+}
+
+.admin-backup-unmatched ul {
+    margin: 0;
+    padding-left: 19px;
+}
+
+.admin-backup-restore-actions {
+    margin-top: 20px;
+    padding-top: 17px;
+    display: flex;
+    justify-content: flex-end;
+    border-top: 1px solid var(--border);
+}
+
+.admin-danger-button {
+    min-height: 40px;
+    padding: 0 16px;
+    border: 1px solid rgba(237, 119, 119, 0.4);
+    border-radius: 8px;
+    background: rgba(237, 119, 119, 0.1);
+    color: #f09a9a;
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.admin-danger-button:hover:not(:disabled) {
+    background: rgba(237, 119, 119, 0.17);
+}
+
+.admin-danger-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.4;
+}
+
+.admin-backup-notes {
+    max-width: 1050px;
+    margin-top: 24px;
+    padding: 20px 22px;
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    background: rgba(17, 25, 35, 0.62);
+}
+
+.admin-backup-notes ul {
+    margin: 13px 0 0;
+    padding-left: 19px;
+}
+
+.admin-backup-notes li {
+    margin: 8px 0;
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1.7;
+}
+
+.admin-backup-notes strong {
+    color: var(--text);
+}
+
+@media (max-width: 760px) {
+    .admin-backup-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .admin-backup-counts {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .admin-backup-preview,
+    .admin-backup-card,
+    .admin-backup-notes {
+        padding: 16px;
+    }
+}
+
+@media (max-width: 420px) {
+    .admin-backup-counts {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .admin-backup-restore-actions button {
+        width: 100%;
+    }
+}

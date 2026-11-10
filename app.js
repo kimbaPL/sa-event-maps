@@ -1666,45 +1666,13 @@ UUIDs are internal only. No visible location numbering.
     }
 
     // ================================================
-    // 18. EXPORT CURRENT CLOUD DATA
+    // 18. LEGACY INCOMPLETE IMPORT / EXPORT
     // ================================================
 
-    function exportCloudData() {
-        const backup = {
-            schema: "sa-event-maps-cloud-backup",
-            version: 1,
-            exportedAt: new Date().toISOString(),
-            exportedBy: currentUser?.id || null,
-            locations: database.locations,
-            events: database.events,
-            eventLocations: database.eventLocations,
-            categories: database.categories,
-            playerProgress: database.playerProgress
-        };
-
-        const blob = new Blob(
-            [JSON.stringify(backup, null, 2)],
-            { type: "application/json;charset=utf-8" }
-        );
-
-        const url = URL.createObjectURL(blob);
-        const anchor = document.createElement("a");
-        anchor.href = url;
-        anchor.download = `sa-event-maps-cloud-backup-${new Date().toISOString().slice(0, 10)}.json`;
-
-        document.body.appendChild(anchor);
-        anchor.click();
-        anchor.remove();
-
-        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-
-        setEditorStatus("Utworzono kopię danych pobranych z Supabase.");
-    }
-
-    elements.exportButton.addEventListener("click", exportCloudData);
-
-    // The old import routine wrote to localStorage. It is deliberately
-    // unavailable after switching to Supabase as the source of truth.
+    // The old map toolbar export contained only the currently signed-in
+    // player's progress. Full organization backups now live in the secured
+    // administrator workspace and include every player's progress.
+    elements.exportButton.hidden = true;
     elements.importButton.hidden = true;
     elements.importFile.hidden = true;
 

@@ -1215,6 +1215,10 @@
                 <span class="admin-nav-icon">⌖</span>
                 <span>Pinezki i lokalizacje</span>
             </button>
+            <button class="admin-nav-item" type="button" data-admin-section="backup">
+                <span class="admin-nav-icon">▧</span>
+                <span>Kopie zapasowe</span>
+            </button>
             <button class="admin-nav-item" type="button" data-admin-section="settings">
                 <span class="admin-nav-icon">⚙</span>
                 <span>Ustawienia globalne</span>
@@ -1556,6 +1560,69 @@
                 </div>
                 <p class="admin-panel-note">Archiwizacja lokalizacji jest globalna — ukrywa pinezkę we wszystkich wydarzeniach. Trwałe usunięcie jest możliwe wyłącznie wtedy, gdy lokalizacja nie ma przypisań do wydarzeń ani zapisanych postępów graczy.</p>
             </section>
+            <!-- ORGANIZATION BACKUP AND RESTORE -->
+            <section class="admin-view" data-admin-view="backup" aria-labelledby="admin-backup-title" hidden>
+                <div class="admin-page-heading">
+                    <div>
+                        <div class="eyebrow">BEZPIECZEŃSTWO DANYCH</div>
+                        <h2 id="admin-backup-title">Kopie zapasowe</h2>
+                        <p>Twórz pełne kopie danych organizacji i bezpiecznie odtwarzaj je w tej samej bazie Supabase.</p>
+                    </div>
+                </div>
+
+                <div id="admin-backup-status" class="admin-panel-status" role="status" aria-live="polite">
+                    Tworzenie i przywracanie kopii jest dostępne wyłącznie dla administratorów.
+                </div>
+
+                <div class="admin-backup-grid">
+                    <article class="admin-backup-card">
+                        <div class="admin-backup-card-icon">↓</div>
+                        <h3>Utwórz pełną kopię</h3>
+                        <p>Pobierz wydarzenia, wspólne lokalizacje, przypisania, kategorie, postępy wszystkich graczy oraz historię aktywności.</p>
+                        <button id="admin-create-backup" class="admin-primary-button" type="button">Utwórz i pobierz kopię</button>
+                    </article>
+
+                    <article class="admin-backup-card">
+                        <div class="admin-backup-card-icon">↑</div>
+                        <h3>Przywróć dane z kopii</h3>
+                        <p>Wybierz wcześniej pobrany plik JSON. Najpierw sprawdzimy jego integralność, projekt i możliwość dopasowania kont graczy.</p>
+                        <label class="admin-form-field admin-backup-file-field" for="admin-backup-file">
+                            <span>Plik kopii zapasowej</span>
+                            <input id="admin-backup-file" type="file" accept=".json,application/json">
+                        </label>
+                        <button id="admin-preview-backup" class="admin-secondary-button" type="button" disabled>Sprawdź kopię</button>
+                    </article>
+                </div>
+
+                <section id="admin-backup-preview" class="admin-backup-preview" hidden aria-labelledby="admin-backup-preview-title">
+                    <div class="admin-section-heading">
+                        <div>
+                            <h3 id="admin-backup-preview-title">Podgląd wybranej kopii</h3>
+                            <p id="admin-backup-preview-description">Sprawdź zakres danych przed przywróceniem.</p>
+                        </div>
+                        <span id="admin-backup-preview-state" class="admin-status-pill">Oczekuje na kontrolę</span>
+                    </div>
+                    <div id="admin-backup-counts" class="admin-backup-counts"></div>
+                    <div id="admin-backup-email-matches" class="admin-backup-email-matches" hidden></div>
+                    <div id="admin-backup-unmatched" class="admin-backup-unmatched" hidden></div>
+                    <div class="admin-backup-restore-actions">
+                        <button id="admin-restore-backup" class="admin-danger-button" type="button" disabled>Przywróć dane ze scaleniem</button>
+                    </div>
+                </section>
+
+                <div class="admin-backup-notes">
+                    <h3>Ważne informacje o kopiach</h3>
+                    <ul>
+                        <li><strong>Scalanie, nie czyszczenie:</strong> rekordy z kopii zostaną dodane lub zaktualizowane. Rekordy obecne w bazie, których nie ma w kopii, nie zostaną usunięte.</li>
+                        <li><strong>Postępy graczy:</strong> kopia obejmuje postępy wszystkich kont. Przy przywracaniu konta są dopasowywane po niezmienionym identyfikatorze Supabase lub adresie e-mail. Jeśli konto z zapisanym postępem nie zostanie dopasowane, import zostanie zablokowany.</li>
+                        <li><strong>Bezpieczeństwo kont:</strong> plik zawiera adresy e-mail, identyfikatory kont i zapisane nicki, ale nie zawiera haseł, tokenów ani sesji. Nicki mogą zostać przywrócone; rangi administratora i oznaczenie właściciela nie są zmieniane przez import.</li>
+                        <li><strong>Historia aktywności:</strong> kopia obejmuje dziennik activity_log. Przywracanie dopisuje również nowe wpisy opisujące operacje wykonane podczas odtwarzania.</li>
+                        <li><strong>Pliki:</strong> galeria screenshotów i pliki Supabase Storage nie są jeszcze wdrożone, więc zostaną dodane do kopii w późniejszym etapie.</li>
+                        <li><strong>Integralność i przechowywanie:</strong> suma SHA-256 wykrywa przypadkowe zmiany pliku, ale nie szyfruje go ani nie jest podpisem kryptograficznym. Plik zawiera prywatne dane — przechowuj go w bezpiecznym miejscu i nie udostępniaj osobom nieupoważnionym.</li>
+                    </ul>
+                </div>
+            </section>
+
             <section class="admin-view" data-admin-view="settings" aria-labelledby="admin-settings-title" hidden>
                 <div class="admin-page-heading"><div><div class="eyebrow">KONFIGURACJA</div><h2 id="admin-settings-title">Ustawienia globalne</h2><p>Wspólne ustawienia dostępne dla całej organizacji.</p></div></div>
                 <div class="admin-coming-soon"><strong>Ta sekcja jest przygotowana do rozbudowy.</strong><span>Dodamy tutaj m.in. globalne sterowanie przesyłaniem screenshotów.</span></div>
