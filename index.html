@@ -1242,7 +1242,6 @@
             <button class="admin-nav-item" type="button" data-admin-section="settings">
                 <span class="admin-nav-icon">⚙</span>
                 <span>Ustawienia globalne</span>
-                <small>Wkrótce</small>
             </button>
             <button class="admin-nav-item" type="button" data-admin-section="help">
                 <span class="admin-nav-icon">▤</span>
@@ -1551,7 +1550,12 @@
                             <span>Opis</span>
                             <textarea id="admin-location-description" name="description" rows="3" maxlength="2000" placeholder="Dodatkowe wskazówki dotyczące znajdźki"></textarea>
                         </label>
-                        <div class="admin-category-form-actions admin-form-field-wide">
+                        <div class="admin-category-form-actions admin-form-field-wide admin-location-form-actions">
+                            <div id="admin-location-image-actions" class="admin-location-image-actions" hidden>
+                                <button id="admin-archive-location-image" class="secondary-location-action" type="button">Archiwizuj zdjęcie</button>
+                                <button id="admin-restore-location-image" class="secondary-location-action" type="button" hidden>Przywróć zdjęcie</button>
+                                <button id="admin-delete-location-image" class="danger-location-action" type="button">Usuń zdjęcie na stałe</button>
+                            </div>
                             <button class="admin-primary-button" type="submit">Zapisz znajdźkę</button>
                             <button id="admin-cancel-location" class="admin-secondary-button" type="button">Anuluj</button>
                         </div>

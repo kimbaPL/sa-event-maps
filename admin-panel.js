@@ -86,6 +86,10 @@ functions or the admin-only data layer. This module owns only UI.
     const locationDescriptionInput = byId("admin-location-description");
     const locationImageFileInput = byId("admin-location-image-file");
     const locationImageFileStatus = byId("admin-location-image-file-status");
+    const locationImageActions = byId("admin-location-image-actions");
+    const archiveLocationImageButton = byId("admin-archive-location-image");
+    const restoreLocationImageButton = byId("admin-restore-location-image");
+    const deleteLocationImageButton = byId("admin-delete-location-image");
     const cancelLocationButton = byId("admin-cancel-location");
     const locationSearchInput = byId("admin-locations-search");
     const locationFilter = byId("admin-locations-filter");
@@ -177,6 +181,10 @@ functions or the admin-only data layer. This module owns only UI.
         locationDescriptionInput,
         locationImageFileInput,
         locationImageFileStatus,
+        locationImageActions,
+        archiveLocationImageButton,
+        restoreLocationImageButton,
+        deleteLocationImageButton,
         cancelLocationButton,
         locationSearchInput,
         locationFilter,
@@ -222,6 +230,8 @@ functions or the admin-only data layer. This module owns only UI.
     let mapScrollPosition = 0;
     let selectedBackup = null;
     let backupPreviewResult = null;
+    let editingLocationImage = null;
+    let locationImageRequestToken = 0;
 
     const sectionTitles = {
         users: "Użytkownicy i uprawnienia",
@@ -1407,7 +1417,72 @@ functions or the admin-only data layer. This module owns only UI.
         }
     }
 
+    function setLocationImageFormState(image, message = "") {
+        editingLocationImage = image || null;
+        const hasImage = Boolean(editingLocationImage);
+        const isArchived = Boolean(editingLocationImage?.is_archived);
+
+        locationImageActions.hidden = !hasImage;
+        archiveLocationImageButton.hidden = !hasImage || isArchived;
+        restoreLocationImageButton.hidden = !hasImage || !isArchived;
+        deleteLocationImageButton.hidden = !hasImage;
+        locationImageFileInput.disabled = hasImage;
+
+        locationImageFileStatus.textContent = message || (hasImage
+            ? `Ta znajdźka ma już zdjęcie (${isArchived ? "zarchiwizowane" : "aktywne"}). Aby dodać inne, administrator musi najpierw usunąć obecny plik.`
+            : "Ta znajdźka nie ma jeszcze zdjęcia. Możesz dodać jedno, opcjonalne zdjęcie.");
+    }
+
+    async function handleLocationImageFormAction(action) {
+        const locationId = locationIdInput.value.trim();
+        const image = editingLocationImage;
+        if (!locationId || !image) return;
+        if (!(["archive", "restore", "delete"].includes(action))) return;
+
+        const locationName = locationNameInput.value.trim() || "tej znajdźki";
+        if (action === "archive") {
+            const accepted = window.confirm(`Zarchiwizować zdjęcie znajdźki „${locationName}”?\n\nZdjęcie zostanie ukryte dla graczy, ale plik nadal będzie przechowywany w Supabase Storage. Możesz je później przywrócić.`);
+            if (!accepted) return;
+        } else if (action === "delete") {
+            const accepted = window.confirm(`Czy na pewno trwale usunąć zdjęcie znajdźki „${locationName}”?\n\nPlik zostanie usunięty z Supabase Storage i zwolni miejsce. Tej operacji nie można cofnąć.`);
+            if (!accepted) return;
+        }
+
+        const actionButtons = [archiveLocationImageButton, restoreLocationImageButton, deleteLocationImageButton];
+        actionButtons.forEach(button => { button.disabled = true; });
+        locationImageFileStatus.textContent = action === "archive"
+            ? "Archiwizowanie zdjęcia…"
+            : action === "restore" ? "Przywracanie zdjęcia…" : "Trwałe usuwanie zdjęcia…";
+
+        try {
+            await getFreshAdminContext();
+            if (action === "archive") await dataApi.archiveLocationImage(image.id);
+            else if (action === "restore") await dataApi.restoreLocationImage(image.id);
+            else await dataApi.deleteLocationImage(image.id);
+
+            notifyCatalogChanged();
+            const refreshedImage = action === "delete" ? null : await dataApi.getLocationImage(locationId);
+            if (locationIdInput.value !== locationId) return;
+            if (action === "delete") locationImageFileInput.value = "";
+            setLocationImageFormState(
+                refreshedImage,
+                action === "archive"
+                    ? "Zdjęcie zostało zarchiwizowane. Nadal możesz je przywrócić albo trwale usunąć."
+                    : action === "restore"
+                        ? "Zdjęcie zostało przywrócone i jest ponownie widoczne dla graczy."
+                        : "Zdjęcie zostało trwale usunięte. Możesz teraz dodać nowe zdjęcie."
+            );
+        } catch (error) {
+            console.error("SA Event Maps: Operacja na zdjęciu z formularza lokalizacji nie powiodła się.", error);
+            locationImageFileStatus.textContent = error.message || "Nie udało się wykonać operacji na zdjęciu.";
+        } finally {
+            actionButtons.forEach(button => { button.disabled = false; });
+        }
+    }
+
     function showLocationForm(location = null, assignToEventId = null) {
+        const requestToken = ++locationImageRequestToken;
+        editingLocationImage = null;
         locationForm.reset();
         locationIdInput.value = location?.id || "";
         locationNameInput.value = location?.name || "";
@@ -1417,6 +1492,7 @@ functions or the admin-only data layer. This module owns only UI.
         locationZInput.value = location?.world?.z ?? "";
         locationDescriptionInput.value = location?.description || "";
         locationImageFileInput.value = "";
+        locationImageActions.hidden = true;
         locationImageFileInput.disabled = Boolean(location);
         locationImageFileStatus.textContent = location
             ? "Sprawdzanie, czy znajdźka ma już zdjęcie…"
@@ -1432,23 +1508,27 @@ functions or the admin-only data layer. This module owns only UI.
         if (location?.id) {
             const requestedLocationId = location.id;
             void dataApi.getLocationImage(requestedLocationId).then(image => {
-                if (locationIdInput.value !== requestedLocationId) return;
-                locationImageFileInput.disabled = Boolean(image);
-                locationImageFileStatus.textContent = image
-                    ? `Ta znajdźka ma już zdjęcie (${image.is_archived ? "zarchiwizowane" : "aktywne"}). Aby dodać inne, administrator musi najpierw usunąć obecny plik.`
-                    : "Ta znajdźka nie ma jeszcze zdjęcia. Możesz dodać jedno, opcjonalne zdjęcie.";
+                if (requestToken !== locationImageRequestToken || locationIdInput.value !== requestedLocationId) return;
+                setLocationImageFormState(image);
             }).catch(error => {
-                if (locationIdInput.value !== requestedLocationId) return;
+                if (requestToken !== locationImageRequestToken || locationIdInput.value !== requestedLocationId) return;
+                editingLocationImage = null;
+                locationImageActions.hidden = true;
                 locationImageFileInput.disabled = true;
                 locationImageFileStatus.textContent = `Nie udało się sprawdzić galerii: ${error.message}`;
             });
+        } else {
+            setLocationImageFormState(null, "Opcjonalnie — jedno zdjęcie na znajdźkę. Zostanie automatycznie skompresowane do WebP.");
         }
     }
 
     function hideLocationForm() {
+        locationImageRequestToken += 1;
+        editingLocationImage = null;
         locationFormCard.hidden = true;
         locationForm.reset();
         locationIdInput.value = "";
+        locationImageActions.hidden = true;
         locationImageFileInput.disabled = false;
         locationImageFileStatus.textContent = "Opcjonalnie — jedno zdjęcie na znajdźkę. Zostanie automatycznie skompresowane do WebP.";
         locationReturnEventId = null;
@@ -1899,6 +1979,9 @@ functions or the admin-only data layer. This module owns only UI.
     addLocationButton.addEventListener("click", () => showLocationForm());
     cancelLocationButton.addEventListener("click", hideLocationForm);
     locationForm.addEventListener("submit", saveLocation);
+    archiveLocationImageButton.addEventListener("click", () => void handleLocationImageFormAction("archive"));
+    restoreLocationImageButton.addEventListener("click", () => void handleLocationImageFormAction("restore"));
+    deleteLocationImageButton.addEventListener("click", () => void handleLocationImageFormAction("delete"));
     locationImageFileInput.addEventListener("change", () => {
         const file = locationImageFileInput.files?.[0];
         locationImageFileStatus.textContent = file
