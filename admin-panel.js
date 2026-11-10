@@ -426,7 +426,7 @@ functions or the admin-only data layer. This module owns only UI.
         selectedBackup = null;
         backupPreviewResult = null;
         backupPreviewCard.hidden = true;
-        backupPreviewButton.disabled = !backupFileInput.files?.length;
+        previewBackupButton.disabled = !backupFileInput.files?.length;
         restoreBackupButton.disabled = true;
         backupCounts.replaceChildren();
         backupUnmatched.replaceChildren();
