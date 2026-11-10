@@ -34,6 +34,343 @@ The UI must not write directly to localStorage.
         throw new Error(error?.message || `Nie udało się wykonać operacji na tabeli ${table}.`);
     }
 
+    const IMAGE_BUCKET = "location-screenshots";
+    const MAX_COMPRESSED_IMAGE_BYTES = 500000;
+    const TARGET_COMPRESSED_IMAGE_BYTES = 300000;
+    const MAX_SOURCE_IMAGE_BYTES = 20 * 1024 * 1024;
+    const MAX_SOURCE_IMAGE_PIXELS = 40 * 1000 * 1000;
+
+    function arrayBufferToBase64(buffer) {
+        const bytes = new Uint8Array(buffer);
+        const chunkSize = 0x8000;
+        let binary = "";
+        for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+            binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + chunkSize, bytes.length)));
+        }
+        return btoa(binary);
+    }
+
+    function base64ToBytes(value) {
+        if (typeof value !== "string" || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) {
+            throw new Error("Kopia zawiera nieprawidłowe dane binarne zdjęcia.");
+        }
+        const binary = atob(value);
+        const bytes = new Uint8Array(binary.length);
+        for (let index = 0; index < binary.length; index += 1) {
+            bytes[index] = binary.charCodeAt(index);
+        }
+        return bytes;
+    }
+
+    function bytesEqual(left, right) {
+        if (left.byteLength !== right.byteLength) return false;
+        for (let index = 0; index < left.byteLength; index += 1) {
+            if (left[index] !== right[index]) return false;
+        }
+        return true;
+    }
+
+    function validateBackupImages(backup, { requireBinary = false } = {}) {
+        const data = backup?.data || {};
+        const images = Array.isArray(data.location_images) ? data.location_images : [];
+        const files = Array.isArray(data.storage_files) ? data.storage_files : [];
+
+        if (images.length !== files.length) {
+            throw new Error("Kopia ma niezgodną liczbę metadanych zdjęć i plików Storage.");
+        }
+
+        const locations = new Set();
+        const paths = new Set();
+        const filesByPath = new Map();
+
+        for (const file of files) {
+            if (!file || typeof file.object_path !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.webp$/i.test(file.object_path)) {
+                throw new Error("Kopia zawiera nieprawidłową ścieżkę zdjęcia.");
+            }
+            if (paths.has(file.object_path)) throw new Error("Kopia zawiera powtórzoną ścieżkę zdjęcia.");
+            paths.add(file.object_path);
+            if (file.mime_type !== "image/webp" || !Number.isInteger(Number(file.size_bytes)) || Number(file.size_bytes) < 1 || Number(file.size_bytes) > MAX_COMPRESSED_IMAGE_BYTES) {
+                throw new Error("Kopia zawiera zdjęcie z nieprawidłowym formatem lub rozmiarem.");
+            }
+            if (requireBinary) {
+                if (typeof file.data_base64 !== "string" || file.data_base64.length > 670000) {
+                    throw new Error("Kopia zawiera zbyt duży lub nieprawidłowy zapis binarny zdjęcia.");
+                }
+                const bytes = base64ToBytes(file.data_base64);
+                if (bytes.byteLength !== Number(file.size_bytes)) {
+                    throw new Error(`Rozmiar pliku „${file.object_path}” nie zgadza się z metadanymi kopii.`);
+                }
+                const isWebP = bytes.byteLength >= 12
+                    && bytes[0] === 0x52 && bytes[1] === 0x49
+                    && bytes[2] === 0x46 && bytes[3] === 0x46
+                    && bytes[8] === 0x57 && bytes[9] === 0x45
+                    && bytes[10] === 0x42 && bytes[11] === 0x50;
+                if (!isWebP) throw new Error(`Plik „${file.object_path}” nie zawiera prawidłowego obrazu WebP.`);
+            }
+            filesByPath.set(file.object_path, file);
+        }
+
+        for (const image of images) {
+            if (!image || typeof image.location_id !== "string" || !image.id || !paths.has(image.object_path)) {
+                throw new Error("Kopia zawiera zdjęcie bez zgodnego pliku Storage.");
+            }
+            if (!image.object_path.startsWith(`${image.location_id}/`)) {
+                throw new Error("Ścieżka pliku zdjęcia nie odpowiada identyfikatorowi znajdźki.");
+            }
+            if (locations.has(image.location_id)) throw new Error("Kopia zawiera więcej niż jedno zdjęcie dla tej samej znajdźki.");
+            locations.add(image.location_id);
+            const file = filesByPath.get(image.object_path);
+            if (image.mime_type !== file.mime_type || Number(image.size_bytes) !== Number(file.size_bytes)) {
+                throw new Error(`Metadane zdjęcia „${image.object_path}” nie zgadzają się z plikiem.`);
+            }
+            if (!Number.isInteger(Number(image.image_width)) || !Number.isInteger(Number(image.image_height))) {
+                throw new Error("Kopia zawiera nieprawidłową rozdzielczość zdjęcia.");
+            }
+        }
+
+        return { images, files };
+    }
+
+    function backupWithoutBinaryPayload(backup) {
+        const copy = JSON.parse(JSON.stringify(backup));
+        const files = Array.isArray(copy?.data?.storage_files) ? copy.data.storage_files : [];
+        copy.data.storage_files = files.map(({ data_base64, ...manifest }) => manifest);
+        return copy;
+    }
+
+    async function getImageUploadSettings() {
+        const { data, error } = await supabase.rpc("get_image_upload_settings");
+        if (error) throwDatabaseError("get_image_upload_settings", error);
+        return {
+            allowPlayerUploads: Boolean(data?.allow_player_image_uploads),
+            administratorsCanUpload: Boolean(data?.administrator_can_upload)
+        };
+    }
+
+    async function setPlayerImageUploadsEnabled(enabled) {
+        await requireAdmin();
+        const { data, error } = await supabase.rpc("admin_set_player_image_uploads_enabled", {
+            p_enabled: Boolean(enabled)
+        });
+        if (error) throwDatabaseError("admin_set_player_image_uploads_enabled", error);
+        return {
+            allowPlayerUploads: Boolean(data?.allow_player_image_uploads),
+            administratorsCanUpload: Boolean(data?.administrator_can_upload)
+        };
+    }
+
+    async function compressLocationImage(file) {
+        if (!(file instanceof Blob) || file.size <= 0) {
+            throw new Error("Wybierz prawidłowy plik graficzny.");
+        }
+        if (file.size > MAX_SOURCE_IMAGE_BYTES) {
+            throw new Error("Wybrane zdjęcie jest większe niż 20 MB. Zmniejsz je przed dodaniem.");
+        }
+        if (file.type && !file.type.startsWith("image/")) {
+            throw new Error("Wybrany plik nie jest obrazem.");
+        }
+        if (typeof createImageBitmap !== "function") {
+            throw new Error("Ta przeglądarka nie udostępnia bezpiecznej konwersji zdjęć. Zaktualizuj przeglądarkę.");
+        }
+
+        let bitmap;
+        try {
+            bitmap = await createImageBitmap(file);
+        } catch (error) {
+            throw new Error("Przeglądarka nie potrafi odczytać tego formatu. Użyj PNG, JPG lub WebP (HEIC może wymagać wcześniejszej konwersji).");
+        }
+
+        try {
+            const pixels = bitmap.width * bitmap.height;
+            if (pixels > MAX_SOURCE_IMAGE_PIXELS) {
+                throw new Error("Zdjęcie ma zbyt dużą rozdzielczość. Maksymalnie 40 megapikseli.");
+            }
+
+            const dimensions = [1600, 1440, 1280, 1152, 1024];
+            const qualities = [0.68, 0.62, 0.56, 0.50];
+            let targetCandidate = null;
+            let fallbackCandidate = null;
+
+            for (const maxDimension of dimensions) {
+                const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
+                const width = Math.max(1, Math.round(bitmap.width * scale));
+                const height = Math.max(1, Math.round(bitmap.height * scale));
+                const canvas = document.createElement("canvas");
+                canvas.width = width;
+                canvas.height = height;
+                const context = canvas.getContext("2d", { alpha: false });
+                if (!context) throw new Error("Nie udało się przygotować obrazu do kompresji.");
+                context.fillStyle = "#ffffff";
+                context.fillRect(0, 0, width, height);
+                context.drawImage(bitmap, 0, 0, width, height);
+
+                for (const quality of qualities) {
+                    const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/webp", quality));
+                    if (!blob || blob.type !== "image/webp") {
+                        throw new Error("Przeglądarka nie potrafi zapisać zdjęcia w formacie WebP.");
+                    }
+                    const candidate = { blob, width, height, quality };
+                    if (blob.size <= MAX_COMPRESSED_IMAGE_BYTES
+                        && (!fallbackCandidate || blob.size < fallbackCandidate.blob.size)) {
+                        fallbackCandidate = candidate;
+                    }
+                    // Prefer the smallest file that retains at least 1152 px on its
+                    // longest side and a moderate WebP quality. Continue testing all
+                    // candidates instead of stopping at the first file below target.
+                    if (Math.max(width, height) >= 1152
+                        && quality >= 0.56
+                        && blob.size <= TARGET_COMPRESSED_IMAGE_BYTES
+                        && (!targetCandidate || blob.size < targetCandidate.blob.size)) {
+                        targetCandidate = candidate;
+                    }
+                }
+            }
+
+            const chosen = targetCandidate || fallbackCandidate;
+            if (!chosen) {
+                throw new Error("Nie udało się zmniejszyć zdjęcia do bezpiecznego limitu 500 KB. Wybierz mniej szczegółowy obraz.");
+            }
+            return {
+                blob: chosen.blob,
+                width: chosen.width,
+                height: chosen.height,
+                originalName: String(file.name || "screenshot").replace(/[\\/\r\n\0]/g, "_").slice(0, 180)
+            };
+        } finally {
+            bitmap.close?.();
+        }
+    }
+
+    async function uploadLocationImage(locationId, file) {
+        const user = await getUserContext();
+        if (!locationId) throw new Error("Brakuje identyfikatora znajdźki.");
+        if (!file) return null;
+
+        const settings = await getImageUploadSettings();
+        if (!settings.allowPlayerUploads && !user.isAdmin) {
+            throw new Error("Administrator zablokował dodawanie nowych zdjęć. Istniejące zdjęcia nadal są widoczne.");
+        }
+
+        const processed = file?.blob instanceof Blob
+            ? file
+            : await compressLocationImage(file);
+        if (!(processed.blob instanceof Blob) || processed.blob.size > MAX_COMPRESSED_IMAGE_BYTES) {
+            throw new Error("Przygotowany obraz przekracza limit 500 KB albo ma nieprawidłowy format.");
+        }
+        const { data: existingImage, error: existingError } = await supabase
+            .from("location_images")
+            .select("id")
+            .eq("location_id", locationId)
+            .maybeSingle();
+        if (existingError) throwDatabaseError("location_images", existingError);
+        if (existingImage) throw new Error("Ta znajdźka ma już przypisane zdjęcie. Jedna lokalizacja może mieć tylko jeden screenshot.");
+
+        const objectPath = `${locationId}/${crypto.randomUUID()}.webp`;
+        const { error: uploadError } = await supabase.storage
+            .from(IMAGE_BUCKET)
+            .upload(objectPath, processed.blob, {
+                cacheControl: "31536000",
+                contentType: "image/webp",
+                upsert: false
+            });
+
+        if (uploadError) throwDatabaseError("Storage — location-screenshots", uploadError);
+
+        const row = {
+            location_id: locationId,
+            object_path: objectPath,
+            original_name: processed.originalName,
+            mime_type: "image/webp",
+            size_bytes: processed.blob.size,
+            image_width: processed.width,
+            image_height: processed.height,
+            uploaded_by: user.id
+        };
+
+        const { data, error } = await supabase
+            .from("location_images")
+            .insert(row)
+            .select("id, location_id, object_path, original_name, mime_type, size_bytes, image_width, image_height, uploaded_by, is_archived, archived_at, archived_by, created_at, updated_at")
+            .single();
+
+        if (error) {
+            const cleanup = await supabase.storage.from(IMAGE_BUCKET).remove([objectPath]);
+            if (cleanup.error) console.warn("SA Event Maps: Nie udało się posprzątać niepowiązanego pliku po błędzie rejestracji zdjęcia.", cleanup.error);
+            throwDatabaseError("location_images", error);
+        }
+        return data;
+    }
+
+    async function getLocationImage(locationId) {
+        if (!locationId) return null;
+        const { data: image, error } = await supabase
+            .from("location_images")
+            .select("id, location_id, object_path, original_name, mime_type, size_bytes, image_width, image_height, uploaded_by, is_archived, archived_at, archived_by, created_at, updated_at")
+            .eq("location_id", locationId)
+            .maybeSingle();
+        if (error) throwDatabaseError("location_images", error);
+        if (!image) return null;
+
+        const { data: signed, error: signedError } = await supabase.storage
+            .from(IMAGE_BUCKET)
+            .createSignedUrl(image.object_path, 300);
+        if (signedError) throwDatabaseError("Storage — podpisany adres zdjęcia", signedError);
+        return { ...image, signedUrl: signed?.signedUrl || "" };
+    }
+
+    async function archiveLocationImage(imageId) {
+        await requireAdmin();
+        const { data, error } = await supabase
+            .from("location_images")
+            .update({ is_archived: true })
+            .eq("id", imageId)
+            .eq("is_archived", false)
+            .select("id")
+            .maybeSingle();
+        if (error) throwDatabaseError("location_images", error);
+        if (!data) throw new Error("Nie udało się zarchiwizować zdjęcia.");
+        return true;
+    }
+
+    async function restoreLocationImage(imageId) {
+        await requireAdmin();
+        const { data, error } = await supabase
+            .from("location_images")
+            .update({ is_archived: false })
+            .eq("id", imageId)
+            .eq("is_archived", true)
+            .select("id")
+            .maybeSingle();
+        if (error) throwDatabaseError("location_images", error);
+        if (!data) throw new Error("Nie udało się przywrócić zdjęcia.");
+        return true;
+    }
+
+    async function deleteLocationImage(imageId) {
+        await requireAdmin();
+        const { data: image, error: imageError } = await supabase
+            .from("location_images")
+            .select("id, object_path")
+            .eq("id", imageId)
+            .maybeSingle();
+        if (imageError) throwDatabaseError("location_images", imageError);
+        if (!image) throw new Error("Nie znaleziono zdjęcia.");
+
+        const { error: storageError } = await supabase.storage
+            .from(IMAGE_BUCKET)
+            .remove([image.object_path]);
+        if (storageError && !/not found|does not exist|404/i.test(storageError.message || "")) {
+            throwDatabaseError("Storage — trwałe usuwanie zdjęcia", storageError);
+        }
+
+        const { error: deleteError } = await supabase
+            .from("location_images")
+            .delete()
+            .eq("id", image.id);
+        if (deleteError) throwDatabaseError("location_images", deleteError);
+        return true;
+    }
+
     async function exportOrganizationBackup() {
         await requireAdmin();
         const { data, error } = await supabase.rpc("admin_export_organization_backup");
@@ -41,31 +378,129 @@ The UI must not write directly to localStorage.
         if (!data || data.schema !== "sa-event-maps-organization-backup" || !data.data) {
             throw new Error("Supabase zwrócił nieprawidłową strukturę kopii organizacji.");
         }
+
+        const imageRows = await fetchAllRows(
+            "location_images",
+            "id, location_id, object_path, original_name, mime_type, size_bytes, image_width, image_height, uploaded_by, is_archived, archived_at, archived_by, created_at, updated_at",
+            query => query.order("location_id", { ascending: true })
+        );
+        data.data.location_images = imageRows;
+        data.data.storage_files = [];
+
+        for (const imageRow of imageRows) {
+            const { data: blob, error: downloadError } = await supabase.storage
+                .from(IMAGE_BUCKET)
+                .download(imageRow.object_path);
+            if (downloadError) {
+                throw new Error(`Nie udało się pobrać zdjęcia „${imageRow.original_name || imageRow.object_path}” do kopii: ${downloadError.message}`);
+            }
+            const buffer = await blob.arrayBuffer();
+            if (buffer.byteLength !== Number(imageRow.size_bytes)) {
+                throw new Error(`Rozmiar zdjęcia „${imageRow.original_name || imageRow.object_path}” nie zgadza się z metadanymi. Kopia nie została utworzona.`);
+            }
+            data.data.storage_files.push({
+                object_path: imageRow.object_path,
+                mime_type: imageRow.mime_type,
+                size_bytes: buffer.byteLength,
+                data_base64: arrayBufferToBase64(buffer)
+            });
+        }
         return data;
     }
 
     async function previewOrganizationBackup(backup) {
         await requireAdmin();
+        const { images, files } = validateBackupImages(backup, { requireBinary: true });
+        const sanitized = backupWithoutBinaryPayload(backup);
         const { data, error } = await supabase.rpc("admin_preview_organization_backup", {
-            p_backup: backup
+            p_backup: sanitized
         });
         if (error) throwDatabaseError("admin_preview_organization_backup", error);
         if (!data || typeof data.can_restore !== "boolean" || !data.counts) {
             throw new Error("Nie udało się uzyskać prawidłowego podglądu kopii.");
         }
+        data.counts.location_images = images.length;
+        data.counts.storage_files = files.length;
         return data;
     }
 
     async function restoreOrganizationBackup(backup) {
         await requireAdmin();
-        const { data, error } = await supabase.rpc("admin_restore_organization_backup", {
-            p_backup: backup
-        });
-        if (error) throwDatabaseError("admin_restore_organization_backup", error);
-        if (!data || data.restore_mode !== "merge") {
-            throw new Error("Supabase nie potwierdził prawidłowego przywrócenia kopii.");
+        const { images, files } = validateBackupImages(backup, { requireBinary: true });
+        const sanitized = backupWithoutBinaryPayload(backup);
+        const backupPaths = new Set(files.map(file => file.object_path));
+        const locationIds = images.map(image => image.location_id);
+
+        let oldImages = [];
+        if (locationIds.length > 0) {
+            const { data, error } = await supabase
+                .from("location_images")
+                .select("location_id, object_path")
+                .in("location_id", locationIds);
+            if (error) throwDatabaseError("location_images — kontrola przed przywróceniem", error);
+            oldImages = data || [];
         }
-        return data;
+
+        const newlyUploaded = [];
+        try {
+            for (const file of files) {
+                const bytes = base64ToBytes(file.data_base64);
+                const blob = new Blob([bytes], { type: "image/webp" });
+                const { error: uploadError } = await supabase.storage
+                    .from(IMAGE_BUCKET)
+                    .upload(file.object_path, blob, {
+                        cacheControl: "31536000",
+                        contentType: "image/webp",
+                        upsert: false
+                    });
+
+                if (!uploadError) {
+                    newlyUploaded.push(file.object_path);
+                    continue;
+                }
+
+                // Immutable image paths are reused when restoring the same snapshot.
+                // A collision is accepted only if the existing bytes are identical.
+                const { data: existingBlob, error: existingError } = await supabase.storage
+                    .from(IMAGE_BUCKET)
+                    .download(file.object_path);
+                if (existingError) throwDatabaseError("Storage — przywracanie zdjęcia", uploadError);
+                const existingBytes = new Uint8Array(await existingBlob.arrayBuffer());
+                if (!bytesEqual(existingBytes, bytes)) {
+                    throw new Error(`Plik „${file.object_path}” już istnieje, ale ma inną zawartość. Przywracanie zostało zatrzymane.`);
+                }
+            }
+
+            const { data, error } = await supabase.rpc("admin_restore_organization_backup", {
+                p_backup: sanitized
+            });
+            if (error) throwDatabaseError("admin_restore_organization_backup", error);
+            if (!data || data.restore_mode !== "merge") {
+                throw new Error("Supabase nie potwierdził prawidłowego przywrócenia kopii.");
+            }
+
+            const obsoletePaths = [...new Set(oldImages
+                .filter(image => !backupPaths.has(image.object_path))
+                .map(image => image.object_path))];
+            let orphanedStorageFiles = 0;
+            if (obsoletePaths.length > 0) {
+                const { error: cleanupError } = await supabase.storage.from(IMAGE_BUCKET).remove(obsoletePaths);
+                if (cleanupError) {
+                    orphanedStorageFiles = obsoletePaths.length;
+                    console.warn("SA Event Maps: Dane zostały przywrócone, ale nie udało się usunąć wszystkich zastąpionych plików Storage.", cleanupError);
+                }
+            }
+
+            return { ...data, orphaned_storage_files: orphanedStorageFiles };
+        } catch (error) {
+            if (newlyUploaded.length > 0) {
+                const { error: cleanupError } = await supabase.storage.from(IMAGE_BUCKET).remove(newlyUploaded);
+                if (cleanupError) {
+                    console.error("SA Event Maps: Nie udało się usunąć plików przesłanych podczas nieudanego przywracania.", cleanupError);
+                }
+            }
+            throw error;
+        }
     }
 
     async function getUserContext() {
@@ -866,6 +1301,14 @@ The UI must not write directly to localStorage.
         exportOrganizationBackup,
         previewOrganizationBackup,
         restoreOrganizationBackup,
+        getImageUploadSettings,
+        setPlayerImageUploadsEnabled,
+        prepareLocationImage: compressLocationImage,
+        uploadLocationImage,
+        getLocationImage,
+        archiveLocationImage,
+        restoreLocationImage,
+        deleteLocationImage,
         createLocation,
         updateLocation,
         setLocationPinned,

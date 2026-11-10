@@ -147,6 +147,17 @@ UUIDs are internal only. No visible location numbering.
 
         selectedName: byId("selected-pin-name"),
         selectedDescription: byId("selected-pin-description"),
+        selectedImageContainer: byId("selected-pin-image-container"),
+        selectedImage: byId("selected-pin-image"),
+        selectedImageOpen: byId("open-selected-pin-image"),
+        selectedImageArchivedLabel: byId("selected-pin-image-archived-label"),
+        selectedImageAdminActions: byId("selected-pin-image-admin-actions"),
+        archiveSelectedImage: byId("archive-selected-pin-image"),
+        restoreSelectedImage: byId("restore-selected-pin-image"),
+        deleteSelectedImage: byId("delete-selected-pin-image"),
+        imageLightbox: byId("location-image-lightbox"),
+        imageLightboxImage: byId("location-image-lightbox-img"),
+        closeImageLightbox: byId("close-location-image-lightbox"),
         selectedStatus: byId("pin-status"),
         selectedEvents: byId("selected-pin-events"),
 
@@ -169,7 +180,10 @@ UUIDs are internal only. No visible location numbering.
         x: document.querySelector(".pin-editor #pin-x"),
         y: document.querySelector(".pin-editor #pin-y"),
         z: document.querySelector(".pin-editor #pin-z"),
-        description: document.querySelector(".pin-editor #pin-description")
+        description: document.querySelector(".pin-editor #pin-description"),
+        imageFile: byId("pin-image-file"),
+        imageFileStatus: byId("pin-image-file-status"),
+        imageUploadGroup: byId("pin-image-upload-group")
     };
 
     const detailFields = {
@@ -210,6 +224,9 @@ UUIDs are internal only. No visible location numbering.
     let currentFilterId = "all";
     let editingEventId = null;
     let editingLocationId = null;
+    let imageUploadsEnabled = true;
+    let selectedLocationImage = null;
+    let selectedImageRenderToken = 0;
 
     let imageWidth = 0;
     let imageHeight = 0;
@@ -241,6 +258,122 @@ UUIDs are internal only. No visible location numbering.
 
     function setEditorStatus(message) {
         elements.editorStatus.textContent = String(message ?? "");
+    }
+
+    function updateImageUploadAvailability() {
+        const isCreatingLocation = !editingLocationId;
+        const canUpload = Boolean(currentUser?.isAdmin || imageUploadsEnabled);
+        if (form.imageFile) {
+            form.imageFile.disabled = !canUpload || !isCreatingLocation;
+        }
+        if (form.imageUploadGroup) {
+            form.imageUploadGroup.hidden = !isCreatingLocation;
+        }
+        if (form.imageFileStatus) {
+            if (!isCreatingLocation) {
+                form.imageFileStatus.textContent = "Zdjęcie można dodać podczas tworzenia znajdźki. Po przypięciu pinezki zarządza nim administrator.";
+            } else if (!canUpload) {
+                form.imageFileStatus.textContent = "Administrator zablokował dodawanie nowych zdjęć. Istniejące zdjęcia pozostają widoczne.";
+            } else {
+                form.imageFileStatus.textContent = "Opcjonalnie — jedno zdjęcie na znajdźkę. Zostanie automatycznie zmniejszone do WebP przed wysłaniem.";
+            }
+        }
+    }
+
+    async function prepareImageForNewLocation(file) {
+        if (!file) return null;
+        const settings = await dataApi.getImageUploadSettings();
+        if (!settings.allowPlayerUploads && !currentUser?.isAdmin) {
+            return { blocked: true };
+        }
+        return dataApi.prepareLocationImage(file);
+    }
+
+    async function renderSelectedLocationImage(locationId) {
+        const token = ++selectedImageRenderToken;
+        selectedLocationImage = null;
+        elements.selectedImageContainer.hidden = true;
+        elements.selectedImageAdminActions.hidden = true;
+        elements.selectedImageArchivedLabel.hidden = true;
+        elements.selectedImage.removeAttribute("src");
+        if (!locationId) return;
+
+        try {
+            const image = await dataApi.getLocationImage(locationId);
+            if (token !== selectedImageRenderToken || selectedLocationId !== locationId) return;
+            if (!image) return;
+
+            selectedLocationImage = image;
+            elements.selectedImage.src = image.signedUrl;
+            elements.selectedImage.alt = `Zdjęcie znajdźki: ${elements.selectedName.textContent}`;
+            elements.selectedImageContainer.hidden = false;
+            elements.selectedImageArchivedLabel.hidden = !image.is_archived;
+            elements.selectedImageAdminActions.hidden = !isAdmin();
+            elements.archiveSelectedImage.hidden = image.is_archived;
+            elements.restoreSelectedImage.hidden = !image.is_archived;
+            updateImageUploadAvailability();
+        } catch (error) {
+            console.warn("SA Event Maps: Nie udało się wczytać zdjęcia znajdźki.", error);
+        }
+    }
+
+    async function openLocationImageLightbox() {
+        if (!selectedLocationId || !selectedLocationImage?.signedUrl) return;
+        try {
+            const refreshedImage = await dataApi.getLocationImage(selectedLocationId);
+            if (!refreshedImage?.signedUrl || refreshedImage.id !== selectedLocationImage.id) return;
+            selectedLocationImage = refreshedImage;
+            elements.selectedImage.src = refreshedImage.signedUrl;
+            elements.imageLightboxImage.src = refreshedImage.signedUrl;
+            elements.imageLightboxImage.alt = `Pełny podgląd: ${elements.selectedName.textContent}`;
+            elements.imageLightbox.hidden = false;
+            document.body.classList.add("has-image-lightbox");
+            elements.closeImageLightbox.focus();
+        } catch (error) {
+            setEditorStatus(error.message || "Nie udało się otworzyć zdjęcia.");
+        }
+    }
+
+    function closeLocationImageLightbox() {
+        elements.imageLightbox.hidden = true;
+        elements.imageLightboxImage.removeAttribute("src");
+        document.body.classList.remove("has-image-lightbox");
+        elements.selectedImageOpen.focus({ preventScroll: true });
+    }
+
+    async function runSelectedImageAction(action) {
+        if (!isAdmin() || !selectedLocationImage) return;
+        const image = selectedLocationImage;
+        if (action === "delete") {
+            const accepted = window.confirm(
+                `Czy na pewno trwale usunąć zdjęcie znajdźki „${elements.selectedName.textContent}”?\n\nPlik zostanie usunięty z Supabase Storage i zwolni miejsce.`
+            );
+            if (!accepted) return;
+        }
+
+        try {
+            elements.archiveSelectedImage.disabled = true;
+            elements.restoreSelectedImage.disabled = true;
+            elements.deleteSelectedImage.disabled = true;
+            if (action === "archive") await dataApi.archiveLocationImage(image.id);
+            if (action === "restore") await dataApi.restoreLocationImage(image.id);
+            if (action === "delete") await dataApi.deleteLocationImage(image.id);
+            selectedLocationImage = null;
+            await renderSelectedLocationImage(selectedLocationId);
+            setEditorStatus(
+                action === "archive" ? "Zdjęcie zostało zarchiwizowane. Plik nadal zajmuje miejsce w Storage." :
+                action === "restore" ? "Zdjęcie zostało przywrócone." :
+                "Zdjęcie zostało trwale usunięte z Storage."
+            );
+        } catch (error) {
+            console.error("SA Event Maps: Operacja na zdjęciu nie powiodła się.", error);
+            setEditorStatus(error.message || "Nie udało się wykonać operacji na zdjęciu.");
+        } finally {
+            elements.archiveSelectedImage.disabled = false;
+            elements.restoreSelectedImage.disabled = false;
+            elements.deleteSelectedImage.disabled = false;
+            updateImageUploadAvailability();
+        }
     }
 
     function setCoordinateStatus(message) {
@@ -1185,6 +1318,11 @@ UUIDs are internal only. No visible location numbering.
         elements.removeAssignment.disabled = true;
 
         elements.selectedEvents.textContent = "—";
+        selectedImageRenderToken += 1;
+        selectedLocationImage = null;
+        elements.selectedImageContainer.hidden = true;
+        elements.selectedImageAdminActions.hidden = true;
+        elements.selectedImage.removeAttribute("src");
 
         if (progressPanel) progressPanel.hidden = true;
         if (editLocationButton) editLocationButton.hidden = true;
@@ -1239,6 +1377,8 @@ UUIDs are internal only. No visible location numbering.
             : "Przypnij pinezkę";
 
         if (progressPanel) progressPanel.hidden = Boolean(location.isReference);
+        void renderSelectedLocationImage(location.id);
+        updateImageUploadAvailability();
 
         updateAssignmentControls();
         renderProgressEditor(location);
@@ -1321,8 +1461,11 @@ UUIDs are internal only. No visible location numbering.
                 ? ""
                 : String(location.world.z);
         form.description.value = location.description || "";
+        form.imageFile.value = "";
+        form.imageFileStatus.textContent = "Zdjęcie można dodać podczas tworzenia znajdźki. Po przypięciu pinezki zarządza nim administrator.";
 
         elements.addPin.textContent = "Zapisz zmiany znajdźki";
+        updateImageUploadAvailability();
         elements.clearForm.textContent = "Anuluj edycję";
 
         setEditorStatus(`Edytujesz własną lokalizację „${location.name}”.`);
@@ -1366,6 +1509,22 @@ UUIDs are internal only. No visible location numbering.
             return;
         }
 
+        let preparedImage = null;
+        let imageWarning = "";
+        const selectedImageFile = !editingLocationId ? form.imageFile.files?.[0] : null;
+        try {
+            if (selectedImageFile) {
+                const prepared = await prepareImageForNewLocation(selectedImageFile);
+                if (prepared?.blocked) {
+                    imageWarning = " Zdjęcie pominięto, ponieważ administrator zablokował nowe wysyłki. Znajdźka została dodana bez zdjęcia.";
+                } else {
+                    preparedImage = prepared;
+                }
+            }
+        } catch (imageError) {
+            imageWarning = ` Zdjęcie pominięto: ${imageError.message || "nie udało się przygotować obrazu."} Znajdźka zostanie dodana bez zdjęcia.`;
+        }
+
         const pixel = worldToPixel(x, y);
         if (!isPixelInsideImage(pixel.x, pixel.y)) {
             setEditorStatus("Podane współrzędne znajdują się poza granicami mapy.");
@@ -1390,7 +1549,7 @@ UUIDs are internal only. No visible location numbering.
                 });
 
                 Object.assign(location, updated);
-                setEditorStatus(`Zapisano zmiany w lokalizacji „${location.name}”.`);
+                setEditorStatus(`Zapisano zmiany w lokalizacji „${location.name}”.${imageWarning}`);
             } else {
                 const created = await dataApi.createLocation({
                     name,
@@ -1402,6 +1561,14 @@ UUIDs are internal only. No visible location numbering.
                 database.locations.push(created);
 
                 let assignmentWarning = "";
+
+                if (preparedImage) {
+                    try {
+                        await dataApi.uploadLocationImage(created.id, preparedImage);
+                    } catch (imageError) {
+                        imageWarning = ` Zdjęcie nie zostało dodane: ${imageError.message}`;
+                    }
+                }
 
                 // When creating a pin in a specific event view,
                 // add it to that event. In the global view it stays
@@ -1429,7 +1596,7 @@ UUIDs are internal only. No visible location numbering.
 
                 selectedLocationId = created.id;
                 setEditorStatus(
-                    `Dodano „${created.name}” do wspólnego katalogu.${assignmentWarning}`
+                    `Dodano „${created.name}” do wspólnego katalogu.${assignmentWarning}${imageWarning}`
                 );
             }
 
@@ -1456,12 +1623,56 @@ UUIDs are internal only. No visible location numbering.
         form.y.value = "";
         form.z.value = "";
         form.description.value = "";
+        form.imageFile.value = "";
+        form.imageFileStatus.textContent = "Opcjonalnie — jedno zdjęcie na znajdźkę. Zostanie automatycznie zmniejszone do WebP przed wysłaniem.";
         editingLocationId = null;
         elements.addPin.textContent = "Dodaj znajdźkę do katalogu";
         elements.clearForm.textContent = "Wyczyść formularz";
+        updateImageUploadAvailability();
     }
 
     elements.addPin.addEventListener("click", () => void saveLocationFromForm());
+
+    form.imageFile.addEventListener("change", async () => {
+        const file = form.imageFile.files?.[0];
+        if (!file) {
+            updateImageUploadAvailability();
+            return;
+        }
+
+        form.imageFile.disabled = true;
+        form.imageFileStatus.textContent = "Sprawdzanie ustawień wysyłania zdjęć…";
+        let fileStatusMessage = "";
+        try {
+            const settings = await dataApi.getImageUploadSettings();
+            imageUploadsEnabled = settings.allowPlayerUploads;
+            if (!settings.allowPlayerUploads && !currentUser?.isAdmin) {
+                form.imageFile.value = "";
+                fileStatusMessage = "Administrator zablokował nowe wysyłki. Znajdźkę nadal możesz dodać bez zdjęcia.";
+            } else {
+                fileStatusMessage = `Wybrano: ${file.name}. Obraz zostanie skompresowany do WebP przed wysłaniem.`;
+            }
+        } catch (error) {
+            imageUploadsEnabled = false;
+            form.imageFile.value = "";
+            fileStatusMessage = `Nie udało się sprawdzić ustawień galerii: ${error.message}. Znajdźkę możesz dodać bez zdjęcia.`;
+        } finally {
+            updateImageUploadAvailability();
+            if (fileStatusMessage) form.imageFileStatus.textContent = fileStatusMessage;
+        }
+    });
+
+    elements.selectedImageOpen.addEventListener("click", () => void openLocationImageLightbox());
+    elements.closeImageLightbox.addEventListener("click", closeLocationImageLightbox);
+    elements.imageLightbox.addEventListener("click", event => {
+        if (event.target === elements.imageLightbox) closeLocationImageLightbox();
+    });
+    document.addEventListener("keydown", event => {
+        if (event.key === "Escape" && !elements.imageLightbox.hidden) closeLocationImageLightbox();
+    });
+    elements.archiveSelectedImage.addEventListener("click", () => void runSelectedImageAction("archive"));
+    elements.restoreSelectedImage.addEventListener("click", () => void runSelectedImageAction("restore"));
+    elements.deleteSelectedImage.addEventListener("click", () => void runSelectedImageAction("delete"));
 
     elements.clearForm.addEventListener("click", () => {
         clearPinForm();
@@ -1947,6 +2158,13 @@ UUIDs are internal only. No visible location numbering.
                 const catalog = await dataApi.loadCatalog();
 
                 currentUser = catalog.user;
+                try {
+                    const imageSettings = await dataApi.getImageUploadSettings();
+                    imageUploadsEnabled = imageSettings.allowPlayerUploads;
+                } catch (settingsError) {
+                    imageUploadsEnabled = false;
+                    console.warn("SA Event Maps: Nie udało się pobrać ustawień galerii. Nowe zdjęcia zostają tymczasowo zablokowane.", settingsError);
+                }
 
                 database.locations = catalog.locations;
                 database.events = catalog.events;
@@ -1955,6 +2173,7 @@ UUIDs are internal only. No visible location numbering.
                 database.playerProgress = catalog.playerProgress;
 
                 dataReady = true;
+                updateImageUploadAvailability();
 
                 updateStorageStatus("Połączono z Supabase", true);
                 setEditorStatus(
@@ -1990,6 +2209,8 @@ UUIDs are internal only. No visible location numbering.
     function clearCloudState() {
         currentUser = null;
         dataReady = false;
+        imageUploadsEnabled = false;
+        updateImageUploadAvailability();
 
         database.locations = [];
         database.events = [];

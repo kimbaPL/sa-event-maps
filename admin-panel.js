@@ -84,6 +84,8 @@ functions or the admin-only data layer. This module owns only UI.
     const locationYInput = byId("admin-location-y");
     const locationZInput = byId("admin-location-z");
     const locationDescriptionInput = byId("admin-location-description");
+    const locationImageFileInput = byId("admin-location-image-file");
+    const locationImageFileStatus = byId("admin-location-image-file-status");
     const cancelLocationButton = byId("admin-cancel-location");
     const locationSearchInput = byId("admin-locations-search");
     const locationFilter = byId("admin-locations-filter");
@@ -103,6 +105,8 @@ functions or the admin-only data layer. This module owns only UI.
     const backupUnmatched = byId("admin-backup-unmatched");
     const backupEmailMatches = byId("admin-backup-email-matches");
     const restoreBackupButton = byId("admin-restore-backup");
+    const blockPlayerImageUploadsToggle = byId("admin-block-player-image-uploads");
+    const imageSettingsStatus = byId("admin-image-settings-status");
 
     const requiredElements = [
         supabase,
@@ -171,6 +175,8 @@ functions or the admin-only data layer. This module owns only UI.
         locationYInput,
         locationZInput,
         locationDescriptionInput,
+        locationImageFileInput,
+        locationImageFileStatus,
         cancelLocationButton,
         locationSearchInput,
         locationFilter,
@@ -188,7 +194,9 @@ functions or the admin-only data layer. This module owns only UI.
         backupCounts,
         backupUnmatched,
         backupEmailMatches,
-        restoreBackupButton
+        restoreBackupButton,
+        blockPlayerImageUploadsToggle,
+        imageSettingsStatus
     ];
 
     if (requiredElements.some(element => !element)) {
@@ -243,6 +251,11 @@ functions or the admin-only data layer. This module owns only UI.
     function setLocationStatus(message, type = "info") {
         locationStatus.textContent = String(message || "");
         locationStatus.dataset.state = type;
+    }
+
+    function setImageSettingsStatus(message, type = "info") {
+        imageSettingsStatus.textContent = String(message || "");
+        imageSettingsStatus.dataset.state = type;
     }
 
     function closeAdminWorkspace() {
@@ -363,6 +376,51 @@ functions or the admin-only data layer. This module owns only UI.
 
         if (section === "events" || section === "locations") {
             void loadManagementData();
+        }
+        if (section === "settings") {
+            void loadImageUploadSettings();
+        }
+    }
+
+    async function loadImageUploadSettings() {
+        blockPlayerImageUploadsToggle.disabled = true;
+        setImageSettingsStatus("Pobieranie ustawień galerii…", "loading");
+        try {
+            await getFreshAdminContext();
+            const settings = await dataApi.getImageUploadSettings();
+            blockPlayerImageUploadsToggle.checked = !settings.allowPlayerUploads;
+            setImageSettingsStatus(
+                settings.allowPlayerUploads
+                    ? "Gracze mogą dodawać po jednym zdjęciu do nowych lub własnych nieprzypiętych znajdziek."
+                    : "Dodawanie nowych zdjęć przez graczy jest zablokowane. Istniejące zdjęcia pozostają widoczne.",
+                "success"
+            );
+        } catch (error) {
+            setImageSettingsStatus(error.message || "Nie udało się pobrać ustawień galerii.", "error");
+        } finally {
+            blockPlayerImageUploadsToggle.disabled = false;
+        }
+    }
+
+    async function saveImageUploadSettings() {
+        const blocked = blockPlayerImageUploadsToggle.checked;
+        blockPlayerImageUploadsToggle.disabled = true;
+        setImageSettingsStatus("Zapisywanie ustawienia…", "loading");
+        try {
+            await getFreshAdminContext();
+            const settings = await dataApi.setPlayerImageUploadsEnabled(!blocked);
+            blockPlayerImageUploadsToggle.checked = !settings.allowPlayerUploads;
+            setImageSettingsStatus(
+                settings.allowPlayerUploads
+                    ? "Odblokowano dodawanie nowych zdjęć przez graczy."
+                    : "Zablokowano dodawanie nowych zdjęć przez graczy. Istniejące zdjęcia nie zostały zmienione.",
+                "success"
+            );
+        } catch (error) {
+            blockPlayerImageUploadsToggle.checked = !blocked;
+            setImageSettingsStatus(error.message || "Nie udało się zapisać ustawienia.", "error");
+        } finally {
+            blockPlayerImageUploadsToggle.disabled = false;
         }
     }
 
@@ -486,7 +544,8 @@ functions or the admin-only data layer. This module owns only UI.
             event_locations: "Przypisania do wydarzeń",
             categories: "Kategorie",
             player_progress: "Wpisy postępu graczy",
-            activity_log: "Historia aktywności"
+            activity_log: "Historia aktywności",
+            location_images: "Zdjęcia znajdziek"
         };
 
         backupCounts.replaceChildren();
@@ -640,8 +699,8 @@ functions or the admin-only data layer. This module owns only UI.
             clearBackupPreview();
             backupFileInput.value = "";
             setBackupStatus(
-                `Przywracanie zakończone. Wydarzenia: ${result.events_processed}; lokalizacje: ${result.locations_processed}; przypisania: ${result.assignments_processed}; kategorie: ${result.categories_processed}; wpisy postępu: ${result.progress_rows_processed}; wpisy historii: ${result.activity_log_rows_processed}. Rangi i właściciel projektu pozostały bez zmian.`,
-                "success"
+                `Przywracanie zakończone. Wydarzenia: ${result.events_processed}; lokalizacje: ${result.locations_processed}; przypisania: ${result.assignments_processed}; kategorie: ${result.categories_processed}; postępy: ${result.progress_rows_processed}; historia: ${result.activity_log_rows_processed}; zdjęcia: ${result.images_processed || 0}. Rangi i właściciel projektu pozostały bez zmian.${result.orphaned_storage_files ? ` Uwaga: nie udało się usunąć ${result.orphaned_storage_files} zastąpionych plików ze Storage.` : ""}`,
+                result.orphaned_storage_files ? "error" : "success"
             );
         } catch (error) {
             console.error("SA Event Maps: Przywracanie kopii nie powiodło się.", error);
@@ -1357,6 +1416,11 @@ functions or the admin-only data layer. This module owns only UI.
         locationYInput.value = location?.world?.y ?? "";
         locationZInput.value = location?.world?.z ?? "";
         locationDescriptionInput.value = location?.description || "";
+        locationImageFileInput.value = "";
+        locationImageFileInput.disabled = Boolean(location);
+        locationImageFileStatus.textContent = location
+            ? "Sprawdzanie, czy znajdźka ma już zdjęcie…"
+            : "Opcjonalnie — jedno zdjęcie na znajdźkę. Zostanie automatycznie skompresowane do WebP.";
         locationReturnEventId = location ? null : assignToEventId;
         locationFormTitle.textContent = location
             ? "Edytuj znajdźkę"
@@ -1364,12 +1428,29 @@ functions or the admin-only data layer. This module owns only UI.
         locationFormCard.hidden = false;
         locationNameInput.focus();
         locationFormCard.scrollIntoView({behavior:"smooth", block:"nearest"});
+
+        if (location?.id) {
+            const requestedLocationId = location.id;
+            void dataApi.getLocationImage(requestedLocationId).then(image => {
+                if (locationIdInput.value !== requestedLocationId) return;
+                locationImageFileInput.disabled = Boolean(image);
+                locationImageFileStatus.textContent = image
+                    ? `Ta znajdźka ma już zdjęcie (${image.is_archived ? "zarchiwizowane" : "aktywne"}). Aby dodać inne, administrator musi najpierw usunąć obecny plik.`
+                    : "Ta znajdźka nie ma jeszcze zdjęcia. Możesz dodać jedno, opcjonalne zdjęcie.";
+            }).catch(error => {
+                if (locationIdInput.value !== requestedLocationId) return;
+                locationImageFileInput.disabled = true;
+                locationImageFileStatus.textContent = `Nie udało się sprawdzić galerii: ${error.message}`;
+            });
+        }
     }
 
     function hideLocationForm() {
         locationFormCard.hidden = true;
         locationForm.reset();
         locationIdInput.value = "";
+        locationImageFileInput.disabled = false;
+        locationImageFileStatus.textContent = "Opcjonalnie — jedno zdjęcie na znajdźkę. Zostanie automatycznie skompresowane do WebP.";
         locationReturnEventId = null;
     }
 
@@ -1638,6 +1719,15 @@ functions or the admin-only data layer. This module owns only UI.
             description: locationDescriptionInput.value.trim(),
             world: {x, y, z}
         };
+        const selectedImageFile = locationImageFileInput.files?.[0];
+        let preparedImage = null;
+        let imageWarning = "";
+        try {
+            if (selectedImageFile) preparedImage = await dataApi.prepareLocationImage(selectedImageFile);
+        } catch (error) {
+            imageWarning = ` Zdjęcie pominięto: ${error.message || "nie udało się przygotować obrazu."} Znajdźka zostanie zapisana bez zdjęcia.`;
+        }
+
         const submit = locationForm.querySelector('button[type="submit"]');
         submit.disabled = true;
         submit.textContent = "Zapisywanie…";
@@ -1649,6 +1739,14 @@ functions or the admin-only data layer. This module owns only UI.
                 saved = await dataApi.updateLocation(id, input);
             } else {
                 saved = await dataApi.createLocation(input);
+            }
+
+            if (preparedImage) {
+                try {
+                    await dataApi.uploadLocationImage(saved.id, preparedImage);
+                } catch (imageError) {
+                    imageWarning = ` Zdjęcie nie zostało dodane: ${imageError.message}`;
+                }
             }
 
             let assignmentError = null;
@@ -1671,13 +1769,13 @@ functions or the admin-only data layer. This module owns only UI.
                 eventAssignmentsCard.scrollIntoView({behavior:"smooth", block:"start"});
             }
             if (assignmentError) {
-                const message = `Utworzono znajdźkę „${saved.name}”, ale nie udało się przypisać jej do wydarzenia: ${assignmentError.message}`;
+                const message = `Utworzono znajdźkę „${saved.name}”, ale nie udało się przypisać jej do wydarzenia: ${assignmentError.message}${imageWarning}`;
                 setLocationStatus(message, "error");
                 if (returnEventId) setEventStatus(message, "error");
             } else {
-                const message = id ? `Zapisano zmiany znajdźki „${name}”.` : `Utworzono znajdźkę „${name}”.`;
-                setLocationStatus(message, "success");
-                if (returnEventId) setEventStatus(`${message} Znajdźka została przypisana do wydarzenia.`, "success");
+                const message = `${id ? `Zapisano zmiany znajdźki „${name}”.` : `Utworzono znajdźkę „${name}”.`}${imageWarning}`;
+                setLocationStatus(message, imageWarning ? "error" : "success");
+                if (returnEventId) setEventStatus(`${message} Znajdźka została przypisana do wydarzenia.`, imageWarning ? "error" : "success");
             }
         } catch (error) {
             console.error("SA Event Maps: Nie udało się zapisać lokalizacji.", error);
@@ -1706,7 +1804,7 @@ functions or the admin-only data layer. This module owns only UI.
         } else if (action === "restore") {
             accepted = window.confirm(`Przywrócić lokalizację „${location.name}”?\n\nPinezka ponownie będzie dostępna w przypisanych wydarzeniach.`);
         } else if (action === "delete") {
-            accepted = window.confirm(`Trwale usunąć znajdźkę „${location.name}”?\n\nBaza pozwoli na to wyłącznie wtedy, gdy lokalizacja nie jest przypisana do żadnego wydarzenia i nie ma zapisanych postępów graczy. Tej operacji nie można cofnąć.`);
+            accepted = window.confirm(`Trwale usunąć znajdźkę „${location.name}”?\n\nBaza pozwoli na to wyłącznie wtedy, gdy lokalizacja nie jest przypisana do żadnego wydarzenia, nie ma zapisanych postępów graczy i nie ma zdjęcia. Jeśli ma zdjęcie, usuń je najpierw z panelu szczegółów znajdźki. Tej operacji nie można cofnąć.`);
         } else return;
         if (!accepted) return;
 
@@ -1801,6 +1899,12 @@ functions or the admin-only data layer. This module owns only UI.
     addLocationButton.addEventListener("click", () => showLocationForm());
     cancelLocationButton.addEventListener("click", hideLocationForm);
     locationForm.addEventListener("submit", saveLocation);
+    locationImageFileInput.addEventListener("change", () => {
+        const file = locationImageFileInput.files?.[0];
+        locationImageFileStatus.textContent = file
+            ? `Wybrano: ${file.name}. Zostanie skompresowane przed wysłaniem.`
+            : "Opcjonalnie — jedno zdjęcie na znajdźkę. Zostanie automatycznie skompresowane do WebP.";
+    });
     locationSearchInput.addEventListener("input", renderLocations);
     locationFilter.addEventListener("change", renderLocations);
     refreshLocationsButton.addEventListener("click", () => void refreshManagementData());
@@ -1818,6 +1922,7 @@ functions or the admin-only data layer. This module owns only UI.
     });
     previewBackupButton.addEventListener("click", () => void previewOrganizationBackupFile());
     restoreBackupButton.addEventListener("click", () => void restoreOrganizationBackupFile());
+    blockPlayerImageUploadsToggle.addEventListener("change", () => void saveImageUploadSettings());
 
     supabase.auth.onAuthStateChange((_event, session) => {
         window.setTimeout(() => {

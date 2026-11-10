@@ -776,6 +776,19 @@
                             Lokalizacja
                         </h3>
 
+                        <div id="selected-pin-image-container" class="selected-pin-image-container" hidden>
+                            <button id="open-selected-pin-image" class="selected-pin-image-preview" type="button" aria-label="Otwórz zdjęcie znajdźki w pełnym podglądzie">
+                                <img id="selected-pin-image" alt="Zdjęcie wybranej znajdźki">
+                                <span class="selected-pin-image-zoom">Powiększ zdjęcie</span>
+                            </button>
+                            <div id="selected-pin-image-archived-label" class="selected-pin-image-archived-label" hidden>Zdjęcie zarchiwizowane — widoczne tylko dla administratorów</div>
+                            <div id="selected-pin-image-admin-actions" class="selected-pin-image-admin-actions" hidden>
+                                <button id="archive-selected-pin-image" class="secondary-location-action" type="button">Archiwizuj zdjęcie</button>
+                                <button id="restore-selected-pin-image" class="secondary-location-action" type="button" hidden>Przywróć zdjęcie</button>
+                                <button id="delete-selected-pin-image" class="danger-location-action" type="button">Usuń zdjęcie na stałe</button>
+                            </div>
+                        </div>
+
                         <p id="selected-pin-description">
                             Brak opisu.
                         </p>
@@ -1007,6 +1020,13 @@
                         Dodaj znajdźkę do katalogu
                     </button>
 
+                    <div id="pin-image-upload-group" class="location-image-upload-group">
+                        <label class="location-image-upload-button" for="pin-image-file">
+                            <span>＋ Dodaj zdjęcie</span>
+                            <input id="pin-image-file" type="file" accept="image/*">
+                        </label>
+                        <div id="pin-image-file-status" class="location-image-file-status" aria-live="polite">Opcjonalnie — jedno zdjęcie na znajdźkę. Zostanie automatycznie zmniejszone przed wysłaniem.</div>
+                    </div>
 
                     <button
                         id="clear-pin-form"
@@ -1535,6 +1555,13 @@
                             <button class="admin-primary-button" type="submit">Zapisz znajdźkę</button>
                             <button id="admin-cancel-location" class="admin-secondary-button" type="button">Anuluj</button>
                         </div>
+                        <div id="admin-location-image-upload-group" class="location-image-upload-group admin-form-field-wide">
+                            <label class="location-image-upload-button" for="admin-location-image-file">
+                                <span>＋ Dodaj zdjęcie</span>
+                                <input id="admin-location-image-file" type="file" accept="image/*">
+                            </label>
+                            <div id="admin-location-image-file-status" class="location-image-file-status" aria-live="polite">Opcjonalnie — jedno zdjęcie na znajdźkę. Dotyczy również edycji lokalizacji bez zdjęcia.</div>
+                        </div>
                     </form>
                 </div>
 
@@ -1617,7 +1644,7 @@
                         <li><strong>Postępy graczy:</strong> kopia obejmuje postępy wszystkich kont. Przy przywracaniu konta są dopasowywane po niezmienionym identyfikatorze Supabase lub adresie e-mail. Jeśli konto z zapisanym postępem nie zostanie dopasowane, import zostanie zablokowany.</li>
                         <li><strong>Bezpieczeństwo kont:</strong> plik zawiera adresy e-mail, identyfikatory kont i zapisane nicki, ale nie zawiera haseł, tokenów ani sesji. Nicki mogą zostać przywrócone; rangi administratora i oznaczenie właściciela nie są zmieniane przez import.</li>
                         <li><strong>Historia aktywności:</strong> kopia obejmuje dziennik activity_log. Przywracanie dopisuje również nowe wpisy opisujące operacje wykonane podczas odtwarzania.</li>
-                        <li><strong>Pliki:</strong> galeria screenshotów i pliki Supabase Storage nie są jeszcze wdrożone, więc zostaną dodane do kopii w późniejszym etapie.</li>
+                        <li><strong>Pliki galerii:</strong> pełna kopia obejmuje metadane oraz binarną zawartość zdjęć z Supabase Storage, również zarchiwizowanych. Limit pojedynczej kopii wynosi 100 MiB.</li>
                         <li><strong>Integralność i przechowywanie:</strong> suma SHA-256 wykrywa przypadkowe zmiany pliku, ale nie szyfruje go ani nie jest podpisem kryptograficznym. Plik zawiera prywatne dane — przechowuj go w bezpiecznym miejscu i nie udostępniaj osobom nieupoważnionym.</li>
                     </ul>
                 </div>
@@ -1625,7 +1652,24 @@
 
             <section class="admin-view" data-admin-view="settings" aria-labelledby="admin-settings-title" hidden>
                 <div class="admin-page-heading"><div><div class="eyebrow">KONFIGURACJA</div><h2 id="admin-settings-title">Ustawienia globalne</h2><p>Wspólne ustawienia dostępne dla całej organizacji.</p></div></div>
-                <div class="admin-coming-soon"><strong>Ta sekcja jest przygotowana do rozbudowy.</strong><span>Dodamy tutaj m.in. globalne sterowanie przesyłaniem screenshotów.</span></div>
+                <article class="admin-settings-card">
+                    <div class="admin-settings-card-heading">
+                        <div>
+                            <h3>Galeria zdjęć znajdziek</h3>
+                            <p>Kontrola możliwości dodawania nowych screenshotów przez graczy.</p>
+                        </div>
+                        <label class="admin-switch" for="admin-block-player-image-uploads">
+                            <input id="admin-block-player-image-uploads" type="checkbox">
+                            <span class="admin-switch-track" aria-hidden="true"></span>
+                            <span class="sr-only">Zablokuj możliwość wysyłania zdjęć przez graczy</span>
+                        </label>
+                    </div>
+                    <div class="admin-settings-toggle-copy">
+                        <strong>Zablokuj możliwość wysyłania zdjęć</strong>
+                        <p>Po włączeniu gracze nie będą mogli dodawać nowych zdjęć. Nie wpłynie to na zdjęcia już dołączone do znajdziek — pozostaną widoczne. Administratorzy nadal mogą zarządzać galerią.</p>
+                    </div>
+                    <div id="admin-image-settings-status" class="admin-panel-status" role="status" aria-live="polite">Ustawienia zostaną pobrane po otwarciu tej sekcji.</div>
+                </article>
             </section>
             <section class="admin-view" data-admin-view="help" aria-labelledby="admin-help-title" hidden>
                 <div class="admin-page-heading"><div><div class="eyebrow">INFORMACJE DLA GRACZY</div><h2 id="admin-help-title">Instrukcje i regulamin</h2><p>Treści pomocnicze i zasady korzystania z SA Event Maps.</p></div></div>
@@ -1634,6 +1678,11 @@
         </div>
     </main>
 </section>
+
+<div id="location-image-lightbox" class="location-image-lightbox" role="dialog" aria-modal="true" aria-label="Pełny podgląd zdjęcia znajdźki" hidden>
+    <button id="close-location-image-lightbox" class="location-image-lightbox-close" type="button" aria-label="Zamknij podgląd">×</button>
+    <img id="location-image-lightbox-img" alt="Pełny podgląd zdjęcia znajdźki">
+</div>
 
 </body>
 </html>
