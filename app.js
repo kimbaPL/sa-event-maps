@@ -246,6 +246,8 @@ UUIDs are internal only. No visible location numbering.
     let helpDocumentsLoaded = false;
     let helpDocumentSections = [];
     let activeHelpDocumentType = "instructions";
+    let helpWorkspaceScrollPosition = 0;
+    let helpReturnNavigationButton = null;
 
     // ================================================
     // 4. SMALL HELPERS
@@ -2313,30 +2315,69 @@ UUIDs are internal only. No visible location numbering.
         }
     }
 
+    function openHelpWorkspace() {
+        const workspace = byId("help-workspace");
+        const navigationButton = byId("help-nav-button");
+        if (!workspace || !workspace.hidden) return;
+
+        helpWorkspaceScrollPosition = window.scrollY || 0;
+        helpReturnNavigationButton = document.querySelector(".navigation .nav-item.is-active");
+
+        document.querySelectorAll(".navigation .nav-item").forEach(button => {
+            button.classList.remove("is-active");
+        });
+        navigationButton?.classList.add("is-active");
+
+        appShell.hidden = true;
+        workspace.hidden = false;
+        document.body.classList.add("is-help-workspace");
+        window.scrollTo({ top: 0, behavior: "auto" });
+        void loadHelpCenter(true);
+    }
+
+    function closeHelpWorkspace() {
+        const workspace = byId("help-workspace");
+        if (!workspace || workspace.hidden) return;
+
+        workspace.hidden = true;
+        appShell.hidden = false;
+        document.body.classList.remove("is-help-workspace");
+        byId("help-nav-button")?.classList.remove("is-active");
+
+        if (helpReturnNavigationButton?.isConnected) {
+            helpReturnNavigationButton.classList.add("is-active");
+        } else {
+            document.querySelector(".navigation .nav-item")?.classList.add("is-active");
+        }
+        helpReturnNavigationButton = null;
+        window.scrollTo({ top: helpWorkspaceScrollPosition, behavior: "auto" });
+    }
+
     function setupNavigation() {
         const buttons = [
-            ...document.querySelectorAll(".navigation .nav-item")
+            ...document.querySelectorAll(".navigation .nav-item:not(#admin-nav-button)")
         ];
 
         const targets = [
             document.querySelector(".workspace-grid"),
             document.querySelector(".catalog-panel"),
-            document.querySelector(".event-management"),
-            byId("help-center")
+            document.querySelector(".event-management")
         ];
 
         buttons.forEach((button, index) => {
-            const target = targets[index];
-            if (!target) return;
-
             button.addEventListener("click", () => {
+                if (index === 3) {
+                    openHelpWorkspace();
+                    return;
+                }
+
+                const target = targets[index];
+                if (!target) return;
+
                 if (index === 0) {
                     currentFilterId = "all";
                     elements.eventFilter.value = "all";
                     renderApplication();
-                }
-                if (index === 3) {
-                    void loadHelpCenter(true);
                 }
 
                 target.scrollIntoView({
@@ -2349,8 +2390,10 @@ UUIDs are internal only. No visible location numbering.
             });
         });
 
+        byId("help-back-to-map")?.addEventListener("click", closeHelpWorkspace);
+
         document.querySelectorAll("[data-help-document-tab]").forEach(button => {
-            if (button.closest(".admin-workspace")) return;
+            if (button.closest("#admin-workspace")) return;
             button.addEventListener("click", () => {
                 activeHelpDocumentType = button.dataset.helpDocumentTab;
                 document.querySelectorAll("#help-center [data-help-document-tab]").forEach(tab => {
@@ -2504,6 +2547,9 @@ UUIDs are internal only. No visible location numbering.
     }
 
     function clearCloudState() {
+        if (!byId("help-workspace")?.hidden) {
+            closeHelpWorkspace();
+        }
         currentUser = null;
         dataReady = false;
         imageUploadsEnabled = false;
