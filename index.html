@@ -1206,7 +1206,6 @@
             <button class="admin-nav-item" type="button" data-admin-section="events">
                 <span class="admin-nav-icon">▦</span>
                 <span>Wydarzenia</span>
-                <small>Wkrótce</small>
             </button>
             <button class="admin-nav-item" type="button" data-admin-section="categories">
                 <span class="admin-nav-icon">◇</span>
@@ -1215,7 +1214,6 @@
             <button class="admin-nav-item" type="button" data-admin-section="locations">
                 <span class="admin-nav-icon">⌖</span>
                 <span>Pinezki i lokalizacje</span>
-                <small>Wkrótce</small>
             </button>
             <button class="admin-nav-item" type="button" data-admin-section="settings">
                 <span class="admin-nav-icon">⚙</span>
@@ -1378,14 +1376,185 @@
                 </p>
             </section>
 
-            <!-- FUTURE MODULES -->
+            <!-- EVENTS -->
             <section class="admin-view" data-admin-view="events" aria-labelledby="admin-events-title" hidden>
-                <div class="admin-page-heading"><div><div class="eyebrow">ZARZĄDZANIE KATALOGIEM</div><h2 id="admin-events-title">Wydarzenia</h2><p>Tworzenie, edycja, archiwizacja i bezpieczne usuwanie wydarzeń.</p></div></div>
-                <div class="admin-coming-soon"><strong>Ta sekcja jest przygotowana do rozbudowy.</strong><span>W następnym etapie przeniesiemy tutaj zarządzanie wydarzeniami i dodamy bezpieczne usuwanie rekordów testowych.</span></div>
+                <div class="admin-page-heading">
+                    <div>
+                        <div class="eyebrow">ZARZĄDZANIE WYDARZENIAMI</div>
+                        <h2 id="admin-events-title">Wydarzenia</h2>
+                        <p>Twórz wydarzenia, ustawiaj ich status i zarządzaj przypisanymi znajdźkami.</p>
+                    </div>
+                    <button id="admin-add-event" class="admin-primary-button" type="button">＋ Dodaj wydarzenie</button>
+                </div>
+
+                <div id="admin-event-status" class="admin-panel-status" role="status" aria-live="polite">Wydarzenia zostaną pobrane po otwarciu tej sekcji.</div>
+
+                <div id="admin-event-form-card" class="admin-category-form-card" hidden>
+                    <div class="admin-form-heading">
+                        <div>
+                            <h3 id="admin-event-form-title">Nowe wydarzenie</h3>
+                            <p>Nazwa jest wymagana. Daty, opis i oficjalna liczba znajdziek są opcjonalne.</p>
+                        </div>
+                    </div>
+                    <form id="admin-event-form" class="admin-management-form">
+                        <input id="admin-event-id" type="hidden">
+                        <label class="admin-form-field admin-form-field-wide" for="admin-event-name">
+                            <span>Nazwa wydarzenia</span>
+                            <input id="admin-event-name" name="name" type="text" maxlength="120" required placeholder="Np. Halloween 2026">
+                        </label>
+                        <label class="admin-form-field admin-form-field-wide" for="admin-event-description">
+                            <span>Opis</span>
+                            <textarea id="admin-event-description" name="description" rows="3" maxlength="2000" placeholder="Opis wydarzenia (opcjonalnie)"></textarea>
+                        </label>
+                        <label class="admin-form-field" for="admin-event-start-date">
+                            <span>Data rozpoczęcia</span>
+                            <input id="admin-event-start-date" name="start_date" type="date">
+                        </label>
+                        <label class="admin-form-field" for="admin-event-end-date">
+                            <span>Data zakończenia</span>
+                            <input id="admin-event-end-date" name="end_date" type="date">
+                        </label>
+                        <label class="admin-form-field" for="admin-event-count">
+                            <span>Oficjalna liczba znajdziek</span>
+                            <input id="admin-event-count" name="official_collectible_count" type="number" min="0" max="100000" step="1" placeholder="Np. 150">
+                        </label>
+                        <label class="admin-form-field" for="admin-event-status-select">
+                            <span>Status</span>
+                            <select id="admin-event-status-select" name="status">
+                                <option value="draft">Robocze</option>
+                                <option value="active">Aktywne</option>
+                                <option value="completed">Zakończone</option>
+                            </select>
+                        </label>
+                        <div class="admin-category-form-actions admin-form-field-wide">
+                            <button class="admin-primary-button" type="submit">Zapisz wydarzenie</button>
+                            <button id="admin-cancel-event" class="admin-secondary-button" type="button">Anuluj</button>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="admin-management-toolbar">
+                    <label class="admin-search-field" for="admin-events-search">
+                        <span>Wyszukaj wydarzenie</span>
+                        <input id="admin-events-search" type="search" placeholder="Nazwa lub opis..." autocomplete="off">
+                    </label>
+                    <label class="admin-form-field admin-management-filter" for="admin-events-filter">
+                        <span>Wyświetl</span>
+                        <select id="admin-events-filter">
+                            <option value="active">Aktywne i robocze</option>
+                            <option value="all">Wszystkie</option>
+                            <option value="draft">Robocze</option>
+                            <option value="active-only">Aktywne</option>
+                            <option value="completed">Zakończone</option>
+                            <option value="archived">Zarchiwizowane</option>
+                        </select>
+                    </label>
+                    <button id="admin-refresh-events" class="admin-refresh-button" type="button">Odśwież</button>
+                    <span id="admin-events-count" class="admin-users-count">—</span>
+                </div>
+
+                <div id="admin-events-list" class="admin-record-list">
+                    <div class="admin-empty-state">Otwórz sekcję, aby pobrać wydarzenia.</div>
+                </div>
+
+                <section id="admin-event-assignments-card" class="admin-related-card" hidden aria-labelledby="admin-event-assignments-title">
+                    <div class="admin-section-heading">
+                        <div>
+                            <div class="eyebrow">ZAWARTOŚĆ WYDARZENIA</div>
+                            <h3 id="admin-event-assignments-title">Znajdźki wydarzenia</h3>
+                            <p id="admin-event-assignments-description">Zarządzaj pinezkami przypisanymi do wybranego wydarzenia.</p>
+                        </div>
+                        <button id="admin-close-event-assignments" class="admin-secondary-button" type="button">Zamknij</button>
+                    </div>
+                    <div class="admin-assignment-toolbar">
+                        <label class="admin-form-field" for="admin-event-add-location-select">
+                            <span>Dodaj istniejącą znajdźkę</span>
+                            <select id="admin-event-add-location-select"><option value="">Wybierz lokalizację…</option></select>
+                        </label>
+                        <button id="admin-event-assign-location" class="admin-primary-button" type="button">Przypisz</button>
+                        <button id="admin-event-create-location" class="admin-secondary-button" type="button">＋ Utwórz nową znajdźkę</button>
+                    </div>
+                    <div id="admin-event-assigned-locations" class="admin-record-list admin-assignment-list">
+                        <div class="admin-empty-state">Brak przypisanych znajdziek.</div>
+                    </div>
+                    <p class="admin-panel-note">Usunięcie znajdźki z wydarzenia usuwa wyłącznie przypisanie. Wspólna lokalizacja i zapisane postępy graczy pozostają w bazie; po ponownym przypisaniu wcześniejsze postępy będą nadal dostępne.</p>
+                </section>
             </section>
+
+            <!-- LOCATIONS -->
             <section class="admin-view" data-admin-view="locations" aria-labelledby="admin-locations-title" hidden>
-                <div class="admin-page-heading"><div><div class="eyebrow">WSPÓLNY KATALOG</div><h2 id="admin-locations-title">Pinezki i lokalizacje</h2><p>Zarządzanie lokalizacjami, przypisaniami do wydarzeń i zdjęciami.</p></div></div>
-                <div class="admin-coming-soon"><strong>Ta sekcja jest przygotowana do rozbudowy.</strong><span>W następnym etapie przeniesiemy tutaj zarządzanie pinezkami, ich powiązaniami oraz galerią zdjęć.</span></div>
+                <div class="admin-page-heading">
+                    <div>
+                        <div class="eyebrow">WSPÓLNY KATALOG</div>
+                        <h2 id="admin-locations-title">Pinezki i lokalizacje</h2>
+                        <p>Zarządzaj wspólnym katalogiem znajdziek, współrzędnymi i blokadą pinezek.</p>
+                    </div>
+                    <button id="admin-add-location" class="admin-primary-button" type="button">＋ Dodaj znajdźkę</button>
+                </div>
+
+                <div id="admin-location-status" class="admin-panel-status" role="status" aria-live="polite">Lokalizacje zostaną pobrane po otwarciu tej sekcji.</div>
+
+                <div id="admin-location-form-card" class="admin-category-form-card" hidden>
+                    <div class="admin-form-heading">
+                        <div>
+                            <h3 id="admin-location-form-title">Nowa znajdźka</h3>
+                            <p>Współrzędne X i Y są wymagane. Współrzędna Z jest opcjonalna.</p>
+                        </div>
+                    </div>
+                    <form id="admin-location-form" class="admin-management-form">
+                        <input id="admin-location-id" type="hidden">
+                        <label class="admin-form-field admin-form-field-wide" for="admin-location-name">
+                            <span>Nazwa znajdźki</span>
+                            <input id="admin-location-name" name="name" type="text" maxlength="120" required placeholder="Nazwa lokalizacji">
+                        </label>
+                        <label class="admin-form-field" for="admin-location-area">
+                            <span>Obszar / miasto</span>
+                            <input id="admin-location-area" name="area" type="text" maxlength="120" placeholder="Np. Los Santos">
+                        </label>
+                        <label class="admin-form-field" for="admin-location-x">
+                            <span>Współrzędna X</span>
+                            <input id="admin-location-x" name="x" type="number" step="any" required>
+                        </label>
+                        <label class="admin-form-field" for="admin-location-y">
+                            <span>Współrzędna Y</span>
+                            <input id="admin-location-y" name="y" type="number" step="any" required>
+                        </label>
+                        <label class="admin-form-field" for="admin-location-z">
+                            <span>Współrzędna Z</span>
+                            <input id="admin-location-z" name="z" type="number" step="any" placeholder="Opcjonalnie">
+                        </label>
+                        <label class="admin-form-field admin-form-field-wide" for="admin-location-description">
+                            <span>Opis</span>
+                            <textarea id="admin-location-description" name="description" rows="3" maxlength="2000" placeholder="Dodatkowe wskazówki dotyczące znajdźki"></textarea>
+                        </label>
+                        <div class="admin-category-form-actions admin-form-field-wide">
+                            <button class="admin-primary-button" type="submit">Zapisz znajdźkę</button>
+                            <button id="admin-cancel-location" class="admin-secondary-button" type="button">Anuluj</button>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="admin-management-toolbar">
+                    <label class="admin-search-field" for="admin-locations-search">
+                        <span>Wyszukaj znajdźkę</span>
+                        <input id="admin-locations-search" type="search" placeholder="Nazwa, obszar lub opis..." autocomplete="off">
+                    </label>
+                    <label class="admin-form-field admin-management-filter" for="admin-locations-filter">
+                        <span>Wyświetl</span>
+                        <select id="admin-locations-filter">
+                            <option value="active">Aktywne</option>
+                            <option value="archived">Zarchiwizowane</option>
+                            <option value="all">Wszystkie</option>
+                        </select>
+                    </label>
+                    <button id="admin-refresh-locations" class="admin-refresh-button" type="button">Odśwież</button>
+                    <span id="admin-locations-count" class="admin-users-count">—</span>
+                </div>
+
+                <div id="admin-locations-list" class="admin-record-list">
+                    <div class="admin-empty-state">Otwórz sekcję, aby pobrać lokalizacje.</div>
+                </div>
+                <p class="admin-panel-note">Archiwizacja lokalizacji jest globalna — ukrywa pinezkę we wszystkich wydarzeniach. Trwałe usunięcie jest możliwe wyłącznie wtedy, gdy lokalizacja nie ma przypisań do wydarzeń ani zapisanych postępów graczy.</p>
             </section>
             <section class="admin-view" data-admin-view="settings" aria-labelledby="admin-settings-title" hidden>
                 <div class="admin-page-heading"><div><div class="eyebrow">KONFIGURACJA</div><h2 id="admin-settings-title">Ustawienia globalne</h2><p>Wspólne ustawienia dostępne dla całej organizacji.</p></div></div>

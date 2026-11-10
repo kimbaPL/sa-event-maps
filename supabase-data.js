@@ -245,6 +245,36 @@ The UI must not write directly to localStorage.
         return catalog;
     }
 
+    async function listAdminEvents() {
+        await requireAdmin();
+        const rows = await fetchAllRows(
+            "events",
+            "id, name, description, start_date, end_date, official_collectible_count, status, created_by, created_at, updated_at, archived_at, archived_by, status_before_archive",
+            query => query.order("created_at", { ascending: false })
+        );
+        return rows.map(mapEvent);
+    }
+
+    async function listAdminLocations() {
+        await requireAdmin();
+        const rows = await fetchAllRows(
+            "locations",
+            "id, name, area, game_x, game_y, game_z, description, created_by, is_pinned, is_archived, archived_at, archived_by, created_at, updated_at",
+            query => query.order("created_at", { ascending: false })
+        );
+        return rows.map(mapLocation);
+    }
+
+    async function listAdminEventLocations() {
+        await requireAdmin();
+        const rows = await fetchAllRows(
+            "event_locations",
+            "id, event_id, location_id, category_id, added_by, created_at",
+            query => query.order("created_at", { ascending: false })
+        );
+        return rows.map(mapEventLocation);
+    }
+
     function finiteNumber(value, fieldName, nullable = false) {
         if ((value === null || value === undefined || value === "") && nullable) {
             return null;
@@ -396,6 +426,37 @@ The UI must not write directly to localStorage.
         return true;
     }
 
+    async function restoreLocation(locationId) {
+        await requireAdmin();
+
+        const { data, error } = await supabase
+            .from("locations")
+            .update({
+                is_archived: false,
+                archived_at: null,
+                archived_by: null,
+                updated_at: new Date().toISOString()
+            })
+            .eq("id", locationId)
+            .eq("is_archived", true)
+            .select("id, name, area, game_x, game_y, game_z, description, created_by, is_pinned, is_archived, archived_at, archived_by, created_at, updated_at")
+            .maybeSingle();
+
+        if (error) throwDatabaseError("locations", error);
+        if (!data) throw new Error("Nie udało się przywrócić lokalizacji.");
+        return mapLocation(data);
+    }
+
+    async function deleteLocation(locationId) {
+        await requireAdmin();
+        const { data, error } = await supabase.rpc("admin_delete_location", {
+            p_location_id: locationId
+        });
+        if (error) throwDatabaseError("locations", error);
+        if (data !== true) throw new Error("Nie udało się trwale usunąć lokalizacji.");
+        return true;
+    }
+
     async function createEvent(input) {
         const user = await requireAdmin();
 
@@ -410,13 +471,22 @@ The UI must not write directly to localStorage.
             throw new Error("Oficjalna liczba znajdziek nie może być ujemna.");
         }
 
+        const status = String(input.status || "draft").trim();
+        if (!["draft", "active", "completed"].includes(status)) {
+            throw new Error("Nieprawidłowy status wydarzenia.");
+        }
+
+        if (input.startDate && input.endDate && input.endDate < input.startDate) {
+            throw new Error("Data zakończenia nie może być wcześniejsza niż data rozpoczęcia.");
+        }
+
         const row = {
             name,
             description: String(input.description || "").trim(),
             start_date: input.startDate || null,
             end_date: input.endDate || null,
             official_collectible_count: count,
-            status: "draft",
+            status,
             created_by: user.id
         };
 
@@ -468,6 +538,14 @@ The UI must not write directly to localStorage.
             update.official_collectible_count = count;
         }
 
+        if (Object.hasOwn(input, "status")) {
+            const status = String(input.status || "").trim();
+            if (!["draft", "active", "completed"].includes(status)) {
+                throw new Error("Nieprawidłowy status wydarzenia.");
+            }
+            update.status = status;
+        }
+
         const { data, error } = await supabase
             .from("events")
             .update(update)
@@ -510,6 +588,54 @@ The UI must not write directly to localStorage.
             .eq("id", eventId);
 
         if (error) throwDatabaseError("events", error);
+        return true;
+    }
+
+    async function restoreEvent(eventId) {
+        await requireAdmin();
+
+        const { data: current, error: readError } = await supabase
+            .from("events")
+            .select("id, status, status_before_archive")
+            .eq("id", eventId)
+            .maybeSingle();
+
+        if (readError) throwDatabaseError("events", readError);
+        if (!current || current.status !== "archived") {
+            throw new Error("Nie znaleziono zarchiwizowanego wydarzenia do przywrócenia.");
+        }
+
+        const allowedStatuses = new Set(["draft", "active", "completed"]);
+        const restoredStatus = allowedStatuses.has(current.status_before_archive)
+            ? current.status_before_archive
+            : "draft";
+
+        const { data, error } = await supabase
+            .from("events")
+            .update({
+                status: restoredStatus,
+                status_before_archive: null,
+                archived_at: null,
+                archived_by: null,
+                updated_at: new Date().toISOString()
+            })
+            .eq("id", eventId)
+            .eq("status", "archived")
+            .select("id, name, description, start_date, end_date, official_collectible_count, status, created_by, created_at, updated_at, archived_at, archived_by, status_before_archive")
+            .maybeSingle();
+
+        if (error) throwDatabaseError("events", error);
+        if (!data) throw new Error("Nie udało się przywrócić wydarzenia. Być może zostało już przywrócone przez innego administratora.");
+        return mapEvent(data);
+    }
+
+    async function deleteEvent(eventId) {
+        await requireAdmin();
+        const { data, error } = await supabase.rpc("admin_delete_event", {
+            p_event_id: eventId
+        });
+        if (error) throwDatabaseError("events", error);
+        if (data !== true) throw new Error("Nie udało się trwale usunąć wydarzenia.");
         return true;
     }
 
@@ -707,9 +833,16 @@ The UI must not write directly to localStorage.
         updateLocation,
         setLocationPinned,
         archiveLocation,
+        restoreLocation,
+        deleteLocation,
         createEvent,
         updateEvent,
         archiveEvent,
+        restoreEvent,
+        deleteEvent,
+        listAdminEvents,
+        listAdminLocations,
+        listAdminEventLocations,
         assignLocationToEvent,
         removeLocationFromEvent,
         setProgress,

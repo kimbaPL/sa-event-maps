@@ -46,6 +46,52 @@ functions or the admin-only data layer. This module owns only UI.
     const categoryList = byId("admin-categories-list");
     const categoryStatus = byId("admin-category-status");
 
+    const addEventButton = byId("admin-add-event");
+    const eventFormCard = byId("admin-event-form-card");
+    const eventForm = byId("admin-event-form");
+    const eventFormTitle = byId("admin-event-form-title");
+    const eventIdInput = byId("admin-event-id");
+    const eventNameInput = byId("admin-event-name");
+    const eventDescriptionInput = byId("admin-event-description");
+    const eventStartInput = byId("admin-event-start-date");
+    const eventEndInput = byId("admin-event-end-date");
+    const eventCountInput = byId("admin-event-count");
+    const eventStatusSelect = byId("admin-event-status-select");
+    const cancelEventButton = byId("admin-cancel-event");
+    const eventSearchInput = byId("admin-events-search");
+    const eventFilter = byId("admin-events-filter");
+    const refreshEventsButton = byId("admin-refresh-events");
+    const eventsCount = byId("admin-events-count");
+    const eventsList = byId("admin-events-list");
+    const eventStatus = byId("admin-event-status");
+    const eventAssignmentsCard = byId("admin-event-assignments-card");
+    const eventAssignmentsTitle = byId("admin-event-assignments-title");
+    const eventAssignmentsDescription = byId("admin-event-assignments-description");
+    const closeEventAssignmentsButton = byId("admin-close-event-assignments");
+    const eventAddLocationSelect = byId("admin-event-add-location-select");
+    const eventAssignLocationButton = byId("admin-event-assign-location");
+    const eventCreateLocationButton = byId("admin-event-create-location");
+    const eventAssignedLocations = byId("admin-event-assigned-locations");
+
+    const addLocationButton = byId("admin-add-location");
+    const locationFormCard = byId("admin-location-form-card");
+    const locationForm = byId("admin-location-form");
+    const locationFormTitle = byId("admin-location-form-title");
+    const locationIdInput = byId("admin-location-id");
+    const locationNameInput = byId("admin-location-name");
+    const locationAreaInput = byId("admin-location-area");
+    const locationXInput = byId("admin-location-x");
+    const locationYInput = byId("admin-location-y");
+    const locationZInput = byId("admin-location-z");
+    const locationDescriptionInput = byId("admin-location-description");
+    const cancelLocationButton = byId("admin-cancel-location");
+    const locationSearchInput = byId("admin-locations-search");
+    const locationFilter = byId("admin-locations-filter");
+    const refreshLocationsButton = byId("admin-refresh-locations");
+    const locationsCount = byId("admin-locations-count");
+    const locationsList = byId("admin-locations-list");
+    const locationStatus = byId("admin-location-status");
+
     const requiredElements = [
         supabase,
         dataApi,
@@ -75,7 +121,51 @@ functions or the admin-only data layer. This module owns only UI.
         categoryFilter,
         categoryCount,
         categoryList,
-        categoryStatus
+        categoryStatus,
+        addEventButton,
+        eventFormCard,
+        eventForm,
+        eventFormTitle,
+        eventIdInput,
+        eventNameInput,
+        eventDescriptionInput,
+        eventStartInput,
+        eventEndInput,
+        eventCountInput,
+        eventStatusSelect,
+        cancelEventButton,
+        eventSearchInput,
+        eventFilter,
+        refreshEventsButton,
+        eventsCount,
+        eventsList,
+        eventStatus,
+        eventAssignmentsCard,
+        eventAssignmentsTitle,
+        eventAssignmentsDescription,
+        closeEventAssignmentsButton,
+        eventAddLocationSelect,
+        eventAssignLocationButton,
+        eventCreateLocationButton,
+        eventAssignedLocations,
+        addLocationButton,
+        locationFormCard,
+        locationForm,
+        locationFormTitle,
+        locationIdInput,
+        locationNameInput,
+        locationAreaInput,
+        locationXInput,
+        locationYInput,
+        locationZInput,
+        locationDescriptionInput,
+        cancelLocationButton,
+        locationSearchInput,
+        locationFilter,
+        refreshLocationsButton,
+        locationsCount,
+        locationsList,
+        locationStatus
     ];
 
     if (requiredElements.some(element => !element)) {
@@ -90,6 +180,13 @@ functions or the admin-only data layer. This module owns only UI.
     let isLoadingCategories = false;
     let hasLoadedUsers = false;
     let hasLoadedCategories = false;
+    let events = [];
+    let locations = [];
+    let eventLocations = [];
+    let isLoadingManagementData = false;
+    let hasLoadedManagementData = false;
+    let selectedEventId = null;
+    let locationReturnEventId = null;
     let activeSection = "users";
     let mapScrollPosition = 0;
 
@@ -110,6 +207,16 @@ functions or the admin-only data layer. This module owns only UI.
     function setCategoryStatus(message, type = "info") {
         categoryStatus.textContent = String(message || "");
         categoryStatus.dataset.state = type;
+    }
+
+    function setEventStatus(message, type = "info") {
+        eventStatus.textContent = String(message || "");
+        eventStatus.dataset.state = type;
+    }
+
+    function setLocationStatus(message, type = "info") {
+        locationStatus.textContent = String(message || "");
+        locationStatus.dataset.state = type;
     }
 
     function closeAdminWorkspace() {
@@ -134,6 +241,19 @@ functions or the admin-only data layer. This module owns only UI.
             usersCount.textContent = "—";
             categoryCount.textContent = "—";
             categoryFormCard.hidden = true;
+            events = [];
+            locations = [];
+            eventLocations = [];
+            hasLoadedManagementData = false;
+            selectedEventId = null;
+            eventAssignmentsCard.hidden = true;
+            eventFormCard.hidden = true;
+            locationFormCard.hidden = true;
+            eventsList.replaceChildren();
+            locationsList.replaceChildren();
+            eventAssignedLocations.replaceChildren();
+            eventsCount.textContent = "—";
+            locationsCount.textContent = "—";
         }
     }
 
@@ -211,6 +331,10 @@ functions or the admin-only data layer. This module owns only UI.
 
         if (section === "categories") {
             void loadCategories();
+        }
+
+        if (section === "events" || section === "locations") {
+            void loadManagementData();
         }
     }
 
@@ -714,6 +838,603 @@ functions or the admin-only data layer. This module owns only UI.
         }
     }
 
+    function makeActionButton(label, action, id, attribute, danger = false, disabled = false) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `admin-category-action${danger ? " is-danger" : ""}`;
+        button.textContent = label;
+        button.dataset[attribute] = action;
+        button.dataset.recordId = id;
+        button.disabled = Boolean(disabled);
+        return button;
+    }
+
+    function statusLabel(status) {
+        return ({
+            draft: "Robocze",
+            active: "Aktywne",
+            completed: "Zakończone",
+            archived: "Zarchiwizowane"
+        })[status] || status || "Nieznany";
+    }
+
+    function dateRangeLabel(start, end) {
+        const formattedStart = start ? new Intl.DateTimeFormat("pl-PL").format(new Date(`${start}T00:00:00`)) : null;
+        const formattedEnd = end ? new Intl.DateTimeFormat("pl-PL").format(new Date(`${end}T00:00:00`)) : null;
+        if (formattedStart && formattedEnd) return `${formattedStart} – ${formattedEnd}`;
+        if (formattedStart) return `Od ${formattedStart}`;
+        if (formattedEnd) return `Do ${formattedEnd}`;
+        return "Nie określono dat";
+    }
+
+    function assignmentCountForEvent(eventId) {
+        return eventLocations.filter(item => item.eventId === eventId).length;
+    }
+
+    function assignmentCountForLocation(locationId) {
+        return eventLocations.filter(item => item.locationId === locationId).length;
+    }
+
+    function showEventForm(event = null) {
+        eventForm.reset();
+        eventIdInput.value = event?.id || "";
+        eventNameInput.value = event?.name || "";
+        eventDescriptionInput.value = event?.description || "";
+        eventStartInput.value = event?.startDate || "";
+        eventEndInput.value = event?.endDate || "";
+        eventCountInput.value = event?.officialCollectibleCount ?? "";
+        eventStatusSelect.value = event?.status || "draft";
+        eventFormTitle.textContent = event ? "Edytuj wydarzenie" : "Nowe wydarzenie";
+        eventFormCard.hidden = false;
+        eventNameInput.focus();
+        eventFormCard.scrollIntoView({behavior:"smooth", block:"nearest"});
+    }
+
+    function hideEventForm() {
+        eventFormCard.hidden = true;
+        eventForm.reset();
+        eventIdInput.value = "";
+    }
+
+    function renderEvents() {
+        const query = eventSearchInput.value.trim().toLocaleLowerCase("pl-PL");
+        const filter = eventFilter.value;
+        const filtered = events.filter(event => {
+            const matchesQuery = !query
+                || String(event.name || "").toLocaleLowerCase("pl-PL").includes(query)
+                || String(event.description || "").toLocaleLowerCase("pl-PL").includes(query);
+            let matchesFilter = true;
+            if (filter === "active") matchesFilter = event.status === "draft" || event.status === "active";
+            else if (filter === "active-only") matchesFilter = event.status === "active";
+            else if (filter === "draft" || filter === "completed" || filter === "archived") matchesFilter = event.status === filter;
+            return matchesQuery && matchesFilter;
+        });
+
+        eventsCount.textContent = filter === "all" && !query ? String(events.length) : `${filtered.length} / ${events.length}`;
+        eventsList.replaceChildren();
+
+        if (!filtered.length) {
+            const empty = document.createElement("div");
+            empty.className = "admin-empty-state";
+            empty.textContent = events.length ? "Brak wydarzeń pasujących do wybranych filtrów." : "Nie ma jeszcze żadnych wydarzeń.";
+            eventsList.appendChild(empty);
+            return;
+        }
+
+        for (const event of filtered) {
+            const card = document.createElement("article");
+            card.className = `admin-record-card${event.status === "archived" ? " is-archived" : ""}`;
+
+            const main = document.createElement("div");
+            main.className = "admin-record-main";
+            const heading = document.createElement("div");
+            heading.className = "admin-record-heading";
+            const title = document.createElement("h3");
+            title.textContent = event.name;
+            const state = document.createElement("span");
+            state.className = `admin-status-pill is-${event.status}`;
+            state.textContent = statusLabel(event.status);
+            heading.append(title, state);
+
+            const description = document.createElement("p");
+            description.className = "admin-record-description";
+            description.textContent = event.description || "Brak opisu.";
+            const meta = document.createElement("div");
+            meta.className = "admin-record-meta";
+            const dates = document.createElement("span");
+            dates.textContent = dateRangeLabel(event.startDate, event.endDate);
+            const count = document.createElement("span");
+            const assignmentCount = assignmentCountForEvent(event.id);
+            count.textContent = `${assignmentCount} przypisanych znajdziek`;
+            const official = document.createElement("span");
+            official.textContent = event.officialCollectibleCount === null || event.officialCollectibleCount === undefined
+                ? "Oficjalna liczba: nie określono"
+                : `Oficjalna liczba: ${event.officialCollectibleCount}`;
+            meta.append(dates, count, official);
+            main.append(heading, description, meta);
+
+            const actions = document.createElement("div");
+            actions.className = "admin-record-actions";
+            if (event.status !== "archived") {
+                actions.appendChild(makeActionButton("Zarządzaj znajdźkami", "manage", event.id, "eventAction"));
+                actions.appendChild(makeActionButton("Edytuj", "edit", event.id, "eventAction"));
+                actions.appendChild(makeActionButton("Archiwizuj", "archive", event.id, "eventAction"));
+            } else {
+                actions.appendChild(makeActionButton("Przywróć", "restore", event.id, "eventAction"));
+            }
+            actions.appendChild(makeActionButton("Usuń na stałe", "delete", event.id, "eventAction", true));
+            card.append(main, actions);
+            eventsList.appendChild(card);
+        }
+    }
+
+    function renderEventLocationOptions() {
+        const assignedIds = new Set(eventLocations
+            .filter(item => item.eventId === selectedEventId)
+            .map(item => item.locationId));
+        const previousValue = eventAddLocationSelect.value;
+        eventAddLocationSelect.replaceChildren();
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = "Wybierz lokalizację…";
+        eventAddLocationSelect.appendChild(placeholder);
+
+        locations
+            .filter(location => !location.isArchived && !assignedIds.has(location.id))
+            .sort((a, b) => a.name.localeCompare(b.name, "pl"))
+            .forEach(location => {
+                const option = document.createElement("option");
+                option.value = location.id;
+                option.textContent = `${location.name} — ${location.area}`;
+                eventAddLocationSelect.appendChild(option);
+            });
+
+        if ([...eventAddLocationSelect.options].some(option => option.value === previousValue)) {
+            eventAddLocationSelect.value = previousValue;
+        }
+        eventAssignLocationButton.disabled = eventAddLocationSelect.options.length <= 1 || !selectedEventId;
+    }
+
+    function renderEventAssignments() {
+        const event = events.find(item => item.id === selectedEventId);
+        if (!event || event.status === "archived") {
+            eventAssignmentsCard.hidden = true;
+            selectedEventId = null;
+            return;
+        }
+
+        eventAssignmentsCard.hidden = false;
+        eventAssignmentsTitle.textContent = `Znajdźki: ${event.name}`;
+        eventAssignmentsDescription.textContent = `Wydarzenie ma przypisanych ${assignmentCountForEvent(event.id)} znajdziek. Dodawaj istniejące lokalizacje lub twórz nowe.`;
+        renderEventLocationOptions();
+        eventAssignedLocations.replaceChildren();
+
+        const assignments = eventLocations
+            .filter(item => item.eventId === selectedEventId)
+            .map(assignment => ({assignment, location: locations.find(location => location.id === assignment.locationId)}))
+            .filter(item => item.location)
+            .sort((a, b) => a.location.name.localeCompare(b.location.name, "pl"));
+
+        if (!assignments.length) {
+            const empty = document.createElement("div");
+            empty.className = "admin-empty-state";
+            empty.textContent = "To wydarzenie nie ma jeszcze przypisanych znajdziek.";
+            eventAssignedLocations.appendChild(empty);
+            return;
+        }
+
+        for (const {assignment, location} of assignments) {
+            const card = document.createElement("article");
+            card.className = `admin-record-card admin-assignment-card${location.isArchived ? " is-archived" : ""}`;
+            const main = document.createElement("div");
+            main.className = "admin-record-main";
+            const heading = document.createElement("div");
+            heading.className = "admin-record-heading";
+            const title = document.createElement("h3");
+            title.textContent = location.name;
+            const state = document.createElement("span");
+            state.className = `admin-status-pill ${location.isArchived ? "is-archived" : location.isPinned ? "is-pinned" : "is-active"}`;
+            state.textContent = location.isArchived ? "Lokalizacja zarchiwizowana" : location.isPinned ? "Pinezka zablokowana" : "Aktywna";
+            heading.append(title, state);
+            const meta = document.createElement("div");
+            meta.className = "admin-record-meta";
+            const area = document.createElement("span");
+            area.textContent = location.area || "Nie określono";
+            const coords = document.createElement("span");
+            coords.textContent = `X: ${location.world.x} · Y: ${location.world.y} · Z: ${location.world.z ?? "—"}`;
+            meta.append(area, coords);
+            main.append(heading, meta);
+            const actions = document.createElement("div");
+            actions.className = "admin-record-actions";
+            actions.appendChild(makeActionButton("Edytuj lokalizację", "edit", location.id, "assignmentAction"));
+            actions.appendChild(makeActionButton("Usuń przypisanie", "unlink", location.id, "assignmentAction", true));
+            card.append(main, actions);
+            eventAssignedLocations.appendChild(card);
+        }
+    }
+
+    function showLocationForm(location = null, assignToEventId = null) {
+        locationForm.reset();
+        locationIdInput.value = location?.id || "";
+        locationNameInput.value = location?.name || "";
+        locationAreaInput.value = location?.area || "Nie określono";
+        locationXInput.value = location?.world?.x ?? "";
+        locationYInput.value = location?.world?.y ?? "";
+        locationZInput.value = location?.world?.z ?? "";
+        locationDescriptionInput.value = location?.description || "";
+        locationReturnEventId = location ? null : assignToEventId;
+        locationFormTitle.textContent = location
+            ? "Edytuj znajdźkę"
+            : assignToEventId ? "Nowa znajdźka do wydarzenia" : "Nowa znajdźka";
+        locationFormCard.hidden = false;
+        locationNameInput.focus();
+        locationFormCard.scrollIntoView({behavior:"smooth", block:"nearest"});
+    }
+
+    function hideLocationForm() {
+        locationFormCard.hidden = true;
+        locationForm.reset();
+        locationIdInput.value = "";
+        locationReturnEventId = null;
+    }
+
+    function renderLocations() {
+        const query = locationSearchInput.value.trim().toLocaleLowerCase("pl-PL");
+        const filter = locationFilter.value;
+        const filtered = locations.filter(location => {
+            const matchesQuery = !query
+                || String(location.name || "").toLocaleLowerCase("pl-PL").includes(query)
+                || String(location.area || "").toLocaleLowerCase("pl-PL").includes(query)
+                || String(location.description || "").toLocaleLowerCase("pl-PL").includes(query);
+            const matchesFilter = filter === "all"
+                || (filter === "archived" ? location.isArchived : !location.isArchived);
+            return matchesQuery && matchesFilter;
+        });
+
+        locationsCount.textContent = filter === "all" && !query ? String(locations.length) : `${filtered.length} / ${locations.length}`;
+        locationsList.replaceChildren();
+
+        if (!filtered.length) {
+            const empty = document.createElement("div");
+            empty.className = "admin-empty-state";
+            empty.textContent = locations.length ? "Brak znajdziek pasujących do wybranych filtrów." : "Wspólny katalog lokalizacji jest pusty.";
+            locationsList.appendChild(empty);
+            return;
+        }
+
+        for (const location of filtered) {
+            const card = document.createElement("article");
+            card.className = `admin-record-card${location.isArchived ? " is-archived" : ""}`;
+            const main = document.createElement("div");
+            main.className = "admin-record-main";
+            const heading = document.createElement("div");
+            heading.className = "admin-record-heading";
+            const title = document.createElement("h3");
+            title.textContent = location.name;
+            const state = document.createElement("span");
+            state.className = `admin-status-pill ${location.isArchived ? "is-archived" : location.isPinned ? "is-pinned" : "is-active"}`;
+            state.textContent = location.isArchived ? "Zarchiwizowana" : location.isPinned ? "Zablokowana" : "Aktywna";
+            heading.append(title, state);
+            const description = document.createElement("p");
+            description.className = "admin-record-description";
+            description.textContent = location.description || "Brak opisu.";
+            const meta = document.createElement("div");
+            meta.className = "admin-record-meta";
+            const area = document.createElement("span");
+            area.textContent = location.area || "Nie określono";
+            const coords = document.createElement("span");
+            coords.textContent = `X: ${location.world.x} · Y: ${location.world.y} · Z: ${location.world.z ?? "—"}`;
+            const assignments = document.createElement("span");
+            const assignmentCount = assignmentCountForLocation(location.id);
+            assignments.textContent = `Przypisania do wydarzeń: ${assignmentCount}`;
+            meta.append(area, coords, assignments);
+            main.append(heading, description, meta);
+            const actions = document.createElement("div");
+            actions.className = "admin-record-actions";
+            actions.appendChild(makeActionButton("Edytuj", "edit", location.id, "locationAction"));
+            if (!location.isArchived) {
+                actions.appendChild(makeActionButton(location.isPinned ? "Odblokuj" : "Zablokuj", location.isPinned ? "unpin" : "pin", location.id, "locationAction"));
+                actions.appendChild(makeActionButton("Archiwizuj", "archive", location.id, "locationAction"));
+            } else {
+                actions.appendChild(makeActionButton("Przywróć", "restore", location.id, "locationAction"));
+            }
+            actions.appendChild(makeActionButton("Usuń na stałe", "delete", location.id, "locationAction", true, assignmentCount > 0));
+            card.append(main, actions);
+            locationsList.appendChild(card);
+        }
+    }
+
+    async function loadManagementData() {
+        if (isLoadingManagementData) return false;
+        isLoadingManagementData = true;
+        setEventStatus("Pobieranie wydarzeń i powiązań…", "loading");
+        setLocationStatus("Pobieranie wspólnego katalogu lokalizacji…", "loading");
+        try {
+            await getFreshAdminContext();
+            const [loadedEvents, loadedLocations, loadedAssignments] = await Promise.all([
+                dataApi.listAdminEvents(),
+                dataApi.listAdminLocations(),
+                dataApi.listAdminEventLocations()
+            ]);
+            events = loadedEvents;
+            locations = loadedLocations;
+            eventLocations = loadedAssignments;
+            hasLoadedManagementData = true;
+            renderEvents();
+            renderLocations();
+            renderEventAssignments();
+            setEventStatus(`Pobrano ${events.length} wydarzeń.`, "success");
+            setLocationStatus(`Pobrano ${locations.length} lokalizacji.`, "success");
+            return true;
+        } catch (error) {
+            console.error("SA Event Maps: Nie udało się pobrać danych wydarzeń i lokalizacji.", error);
+            setEventStatus(error.message || "Nie udało się pobrać wydarzeń.", "error");
+            setLocationStatus(error.message || "Nie udało się pobrać lokalizacji.", "error");
+            if (/wyłącznie dla administratora|ranga administratora/i.test(error.message || "")) setAdminAccess(false);
+            return false;
+        } finally {
+            isLoadingManagementData = false;
+        }
+    }
+
+    async function refreshManagementData() {
+        hasLoadedManagementData = false;
+        await loadManagementData();
+    }
+
+    function notifyCatalogChanged() {
+        window.dispatchEvent(new Event("sa-event-maps:catalog-changed"));
+    }
+
+    async function saveEvent(event) {
+        event.preventDefault();
+        const name = eventNameInput.value.trim();
+        if (!name) {
+            setEventStatus("Podaj nazwę wydarzenia.", "error");
+            eventNameInput.focus();
+            return;
+        }
+        if (eventStartInput.value && eventEndInput.value && eventEndInput.value < eventStartInput.value) {
+            setEventStatus("Data zakończenia nie może być wcześniejsza niż data rozpoczęcia.", "error");
+            eventEndInput.focus();
+            return;
+        }
+        const id = eventIdInput.value.trim();
+        const input = {
+            name,
+            description: eventDescriptionInput.value.trim(),
+            startDate: eventStartInput.value || null,
+            endDate: eventEndInput.value || null,
+            officialCollectibleCount: eventCountInput.value === "" ? null : Number(eventCountInput.value),
+            status: eventStatusSelect.value
+        };
+        const submit = eventForm.querySelector('button[type="submit"]');
+        submit.disabled = true;
+        submit.textContent = "Zapisywanie…";
+        setEventStatus("Zapisywanie wydarzenia…", "loading");
+        try {
+            await getFreshAdminContext();
+            if (id) await dataApi.updateEvent(id, input);
+            else await dataApi.createEvent(input);
+            notifyCatalogChanged();
+            hideEventForm();
+            await refreshManagementData();
+            setEventStatus(id ? `Zapisano wydarzenie „${name}”.` : `Utworzono wydarzenie „${name}”.`, "success");
+        } catch (error) {
+            console.error("SA Event Maps: Nie udało się zapisać wydarzenia.", error);
+            setEventStatus(error.message || "Nie udało się zapisać wydarzenia.", "error");
+        } finally {
+            submit.disabled = false;
+            submit.textContent = "Zapisz wydarzenie";
+        }
+    }
+
+    async function handleEventAction(action, eventId) {
+        const event = events.find(item => item.id === eventId);
+        if (!event) {
+            setEventStatus("Nie znaleziono wydarzenia. Odśwież listę.", "error");
+            return;
+        }
+        if (action === "manage") {
+            selectedEventId = eventId;
+            eventAssignmentsCard.hidden = false;
+            renderEventAssignments();
+            eventAssignmentsCard.scrollIntoView({behavior:"smooth", block:"start"});
+            return;
+        }
+        if (action === "edit") {
+            if (event.status === "archived") return;
+            showEventForm(event);
+            return;
+        }
+
+        let accepted = true;
+        if (action === "archive") {
+            accepted = window.confirm(`Zarchiwizować wydarzenie „${event.name}”?\n\nWydarzenie zniknie z aktywnego widoku graczy, ale wszystkie przypisania i postępy zostaną zachowane. Można je później przywrócić.`);
+        } else if (action === "restore") {
+            accepted = window.confirm(`Przywrócić wydarzenie „${event.name}”?\n\nWydarzenie wróci ze statusem sprzed archiwizacji.`);
+        } else if (action === "delete") {
+            accepted = window.confirm(`Trwale usunąć wydarzenie „${event.name}”?\n\nPrzypisania znajdziek do tego wydarzenia zostaną usunięte, ale same pinezki pozostaną w katalogu. Jeżeli istnieje choć jeden zapis postępu gracza, baza zablokuje usunięcie. Tej operacji nie można cofnąć.`);
+        } else return;
+        if (!accepted) return;
+
+        setEventStatus("Wykonywanie operacji…", "loading");
+        eventsList.querySelectorAll("button").forEach(button => button.disabled = true);
+        try {
+            await getFreshAdminContext();
+            if (action === "archive") await dataApi.archiveEvent(eventId);
+            else if (action === "restore") await dataApi.restoreEvent(eventId);
+            else if (action === "delete") {
+                await dataApi.deleteEvent(eventId);
+                if (selectedEventId === eventId) {
+                    selectedEventId = null;
+                    eventAssignmentsCard.hidden = true;
+                }
+            }
+            notifyCatalogChanged();
+            await refreshManagementData();
+            const label = {archive:"Zarchiwizowano",restore:"Przywrócono",delete:"Trwale usunięto"}[action];
+            setEventStatus(`${label} wydarzenie „${event.name}”.`, "success");
+        } catch (error) {
+            console.error("SA Event Maps: Operacja na wydarzeniu nie powiodła się.", error);
+            setEventStatus(error.message || "Nie udało się wykonać operacji na wydarzeniu.", "error");
+        } finally {
+            eventsList.querySelectorAll("button").forEach(button => button.disabled = false);
+        }
+    }
+
+    async function addLocationAssignment() {
+        if (!selectedEventId) return;
+        const locationId = eventAddLocationSelect.value;
+        if (!locationId) {
+            setEventStatus("Wybierz lokalizację, którą chcesz przypisać.", "error");
+            return;
+        }
+        eventAssignLocationButton.disabled = true;
+        setEventStatus("Przypisywanie znajdźki do wydarzenia…", "loading");
+        try {
+            await getFreshAdminContext();
+            await dataApi.assignLocationToEvent(selectedEventId, locationId, null);
+            notifyCatalogChanged();
+            await refreshManagementData();
+            setEventStatus("Przypisano znajdźkę do wydarzenia.", "success");
+        } catch (error) {
+            console.error("SA Event Maps: Nie udało się przypisać znajdźki.", error);
+            setEventStatus(error.message || "Nie udało się przypisać znajdźki.", "error");
+        } finally {
+            eventAssignLocationButton.disabled = false;
+        }
+    }
+
+    async function removeEventAssignment(locationId) {
+        const location = locations.find(item => item.id === locationId);
+        const event = events.find(item => item.id === selectedEventId);
+        if (!location || !event) return;
+        const accepted = window.confirm(`Usunąć „${location.name}” z wydarzenia „${event.name}”?\n\nUsunięte zostanie tylko przypisanie do tego wydarzenia. Wspólna pinezka i zapisane postępy graczy pozostaną w bazie. Po ponownym przypisaniu wcześniejsze postępy będą nadal widoczne.`);
+        if (!accepted) return;
+        setEventStatus("Usuwanie przypisania…", "loading");
+        try {
+            await getFreshAdminContext();
+            await dataApi.removeLocationFromEvent(selectedEventId, locationId);
+            notifyCatalogChanged();
+            await refreshManagementData();
+            setEventStatus(`Usunięto przypisanie „${location.name}” z wydarzenia „${event.name}”.`, "success");
+        } catch (error) {
+            console.error("SA Event Maps: Nie udało się usunąć przypisania.", error);
+            setEventStatus(error.message || "Nie udało się usunąć przypisania.", "error");
+        }
+    }
+
+    async function saveLocation(event) {
+        event.preventDefault();
+        const name = locationNameInput.value.trim();
+        const x = Number(locationXInput.value);
+        const y = Number(locationYInput.value);
+        const z = locationZInput.value === "" ? null : Number(locationZInput.value);
+        if (!name || locationXInput.value === "" || locationYInput.value === "" || !Number.isFinite(x) || !Number.isFinite(y) || (z !== null && !Number.isFinite(z))) {
+            setLocationStatus("Podaj nazwę oraz prawidłowe współrzędne X i Y. Z może pozostać puste.", "error");
+            return;
+        }
+        const id = locationIdInput.value.trim();
+        const returnEventId = locationReturnEventId;
+        const input = {
+            name,
+            area: locationAreaInput.value.trim() || "Nie określono",
+            description: locationDescriptionInput.value.trim(),
+            world: {x, y, z}
+        };
+        const submit = locationForm.querySelector('button[type="submit"]');
+        submit.disabled = true;
+        submit.textContent = "Zapisywanie…";
+        setLocationStatus("Zapisywanie lokalizacji…", "loading");
+        try {
+            await getFreshAdminContext();
+            let saved;
+            if (id) {
+                saved = await dataApi.updateLocation(id, input);
+            } else {
+                saved = await dataApi.createLocation(input);
+            }
+
+            let assignmentError = null;
+            if (!id && returnEventId) {
+                try {
+                    await dataApi.assignLocationToEvent(returnEventId, saved.id, null);
+                } catch (error) {
+                    assignmentError = error;
+                }
+            }
+            notifyCatalogChanged();
+
+            hideLocationForm();
+            await refreshManagementData();
+            if (returnEventId) {
+                activateSection("events");
+                selectedEventId = returnEventId;
+                renderEventAssignments();
+                eventAssignmentsCard.hidden = false;
+                eventAssignmentsCard.scrollIntoView({behavior:"smooth", block:"start"});
+            }
+            if (assignmentError) {
+                const message = `Utworzono znajdźkę „${saved.name}”, ale nie udało się przypisać jej do wydarzenia: ${assignmentError.message}`;
+                setLocationStatus(message, "error");
+                if (returnEventId) setEventStatus(message, "error");
+            } else {
+                const message = id ? `Zapisano zmiany znajdźki „${name}”.` : `Utworzono znajdźkę „${name}”.`;
+                setLocationStatus(message, "success");
+                if (returnEventId) setEventStatus(`${message} Znajdźka została przypisana do wydarzenia.`, "success");
+            }
+        } catch (error) {
+            console.error("SA Event Maps: Nie udało się zapisać lokalizacji.", error);
+            setLocationStatus(error.message || "Nie udało się zapisać lokalizacji.", "error");
+        } finally {
+            submit.disabled = false;
+            submit.textContent = "Zapisz znajdźkę";
+        }
+    }
+
+    async function handleLocationAction(action, locationId) {
+        const location = locations.find(item => item.id === locationId);
+        if (!location) {
+            setLocationStatus("Nie znaleziono lokalizacji. Odśwież listę.", "error");
+            return;
+        }
+        if (action === "edit") {
+            showLocationForm(location);
+            return;
+        }
+        let accepted = true;
+        if (action === "pin" || action === "unpin") {
+            accepted = window.confirm(`${action === "pin" ? "Zablokować" : "Odblokować"} pinezkę „${location.name}”?\n\n${action === "pin" ? "Gracze nie będą mogli edytować tej lokalizacji." : "Właściciel lokalizacji będzie mógł ponownie edytować własną pinezkę."}`);
+        } else if (action === "archive") {
+            accepted = window.confirm(`Zarchiwizować lokalizację „${location.name}”?\n\nTo działanie jest globalne: pinezka zostanie ukryta we wszystkich wydarzeniach. Przypisania i postępy graczy zostaną zachowane. Można ją później przywrócić.`);
+        } else if (action === "restore") {
+            accepted = window.confirm(`Przywrócić lokalizację „${location.name}”?\n\nPinezka ponownie będzie dostępna w przypisanych wydarzeniach.`);
+        } else if (action === "delete") {
+            accepted = window.confirm(`Trwale usunąć znajdźkę „${location.name}”?\n\nBaza pozwoli na to wyłącznie wtedy, gdy lokalizacja nie jest przypisana do żadnego wydarzenia i nie ma zapisanych postępów graczy. Tej operacji nie można cofnąć.`);
+        } else return;
+        if (!accepted) return;
+
+        setLocationStatus("Wykonywanie operacji…", "loading");
+        locationsList.querySelectorAll("button").forEach(button => button.disabled = true);
+        try {
+            await getFreshAdminContext();
+            if (action === "pin" || action === "unpin") await dataApi.setLocationPinned(locationId, action === "pin");
+            else if (action === "archive") await dataApi.archiveLocation(locationId);
+            else if (action === "restore") await dataApi.restoreLocation(locationId);
+            else if (action === "delete") await dataApi.deleteLocation(locationId);
+            notifyCatalogChanged();
+            await refreshManagementData();
+            const labels = {pin:"Zablokowano",unpin:"Odblokowano",archive:"Zarchiwizowano",restore:"Przywrócono",delete:"Trwale usunięto"};
+            setLocationStatus(`${labels[action]} znajdźkę „${location.name}”.`, "success");
+        } catch (error) {
+            console.error("SA Event Maps: Operacja na lokalizacji nie powiodła się.", error);
+            setLocationStatus(error.message || "Nie udało się wykonać operacji na lokalizacji.", "error");
+        } finally {
+            locationsList.querySelectorAll("button").forEach(button => button.disabled = false);
+        }
+    }
+
     navButton.addEventListener("click", () => {
         void openAdminWorkspace();
     });
@@ -745,6 +1466,53 @@ functions or the admin-only data layer. This module owns only UI.
         const button = event.target.closest("button[data-category-action]");
         if (!button || button.disabled) return;
         void handleCategoryAction(button.dataset.categoryAction, button.dataset.categoryId);
+    });
+
+    addEventButton.addEventListener("click", () => showEventForm());
+    cancelEventButton.addEventListener("click", hideEventForm);
+    eventForm.addEventListener("submit", saveEvent);
+    eventSearchInput.addEventListener("input", renderEvents);
+    eventFilter.addEventListener("change", renderEvents);
+    refreshEventsButton.addEventListener("click", () => void refreshManagementData());
+    eventsList.addEventListener("click", event => {
+        const button = event.target.closest("button[data-event-action]");
+        if (!button || button.disabled) return;
+        void handleEventAction(button.dataset.eventAction, button.dataset.recordId);
+    });
+    closeEventAssignmentsButton.addEventListener("click", () => {
+        eventAssignmentsCard.hidden = true;
+        selectedEventId = null;
+    });
+    eventAssignLocationButton.addEventListener("click", () => void addLocationAssignment());
+    eventCreateLocationButton.addEventListener("click", () => {
+        if (!selectedEventId) return;
+        activateSection("locations");
+        showLocationForm(null, selectedEventId);
+    });
+    eventAssignedLocations.addEventListener("click", event => {
+        const button = event.target.closest("button[data-assignment-action]");
+        if (!button || button.disabled) return;
+        if (button.dataset.assignmentAction === "unlink") {
+            void removeEventAssignment(button.dataset.recordId);
+        } else if (button.dataset.assignmentAction === "edit") {
+            const location = locations.find(item => item.id === button.dataset.recordId);
+            if (location) {
+                activateSection("locations");
+                showLocationForm(location);
+            }
+        }
+    });
+
+    addLocationButton.addEventListener("click", () => showLocationForm());
+    cancelLocationButton.addEventListener("click", hideLocationForm);
+    locationForm.addEventListener("submit", saveLocation);
+    locationSearchInput.addEventListener("input", renderLocations);
+    locationFilter.addEventListener("change", renderLocations);
+    refreshLocationsButton.addEventListener("click", () => void refreshManagementData());
+    locationsList.addEventListener("click", event => {
+        const button = event.target.closest("button[data-location-action]");
+        if (!button || button.disabled) return;
+        void handleLocationAction(button.dataset.locationAction, button.dataset.recordId);
     });
 
     supabase.auth.onAuthStateChange((_event, session) => {

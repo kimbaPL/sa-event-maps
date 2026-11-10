@@ -2045,6 +2045,29 @@ UUIDs are internal only. No visible location numbering.
         updateStorageStatus("Zaloguj się, aby wczytać katalog", true);
     }
 
+    // Administrator workspace writes directly through the Supabase data layer.
+    // Refresh the in-memory map catalog after those writes so returning to the map
+    // never shows stale events, locations, or event-location assignments.
+    window.addEventListener("sa-event-maps:catalog-changed", () => {
+        window.setTimeout(async () => {
+            if (!currentUser || !dataReady) return;
+
+            // Wait for any initial or previous catalog load, then fetch again so
+            // the result necessarily includes the administrator's committed write.
+            if (bootstrapPromise) {
+                try {
+                    await bootstrapPromise;
+                } catch {
+                    // bootstrapFromSupabase already reports its own errors.
+                }
+            }
+
+            if (currentUser && dataReady) {
+                void bootstrapFromSupabase();
+            }
+        }, 0);
+    });
+
     supabase.auth.onAuthStateChange((event, session) => {
         window.setTimeout(() => {
             if (session && event !== "PASSWORD_RECOVERY") {

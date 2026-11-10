@@ -3358,3 +3358,231 @@ textarea {
         width: auto;
     }
 }
+
+
+/* =====================================================
+   ADMIN EVENTS AND LOCATION MANAGEMENT
+===================================================== */
+
+.admin-management-form {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 15px;
+}
+
+.admin-management-toolbar {
+    margin: 19px 0 14px;
+    display: flex;
+    align-items: end;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.admin-management-toolbar .admin-search-field {
+    flex: 1 1 270px;
+    max-width: 470px;
+}
+
+.admin-management-filter {
+    width: 205px;
+}
+
+.admin-record-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 440px), 1fr));
+    gap: 12px;
+}
+
+.admin-record-card {
+    min-width: 0;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 13px;
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    background: var(--surface);
+}
+
+.admin-record-card.is-archived {
+    opacity: 0.75;
+    background: rgba(17, 25, 35, 0.58);
+}
+
+.admin-record-main {
+    min-width: 0;
+}
+
+.admin-record-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.admin-record-heading h3 {
+    min-width: 0;
+    margin: 0;
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
+.admin-record-description {
+    margin: 8px 0 0;
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+}
+
+.admin-record-meta {
+    margin-top: 11px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 13px;
+    color: #8191a2;
+    font-size: 10px;
+    line-height: 1.5;
+}
+
+.admin-status-pill {
+    flex-shrink: 0;
+    padding: 4px 8px;
+    border: 1px solid rgba(141, 155, 170, 0.25);
+    border-radius: 20px;
+    color: #aab6c2;
+    font-size: 9px;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.admin-status-pill.is-active,
+.admin-status-pill.is-pinned {
+    border-color: rgba(101, 214, 163, 0.25);
+    color: var(--accent);
+}
+
+.admin-status-pill.is-draft {
+    border-color: rgba(117, 161, 214, 0.28);
+    color: #91b9e8;
+}
+
+.admin-status-pill.is-completed {
+    border-color: rgba(194, 166, 112, 0.3);
+    color: #d6b77d;
+}
+
+.admin-status-pill.is-archived {
+    border-color: rgba(141, 155, 170, 0.25);
+    color: #aab6c2;
+}
+
+.admin-record-actions {
+    margin-top: auto;
+    padding-top: 11px;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 7px;
+    border-top: 1px solid rgba(40, 53, 68, 0.75);
+}
+
+.admin-record-actions button:disabled {
+    opacity: 0.38;
+    cursor: not-allowed;
+}
+
+.admin-related-card {
+    margin-top: 25px;
+    padding: 20px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: rgba(20, 30, 42, 0.82);
+}
+
+.admin-related-card[hidden] {
+    display: none !important;
+}
+
+.admin-related-card .admin-section-heading {
+    margin-top: 0;
+}
+
+.admin-related-card .admin-section-heading h3 {
+    margin: 4px 0 5px;
+    font-size: 16px;
+}
+
+.admin-related-card .admin-section-heading p {
+    margin: 0;
+}
+
+.admin-assignment-toolbar {
+    margin: 17px 0;
+    display: flex;
+    align-items: end;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.admin-assignment-toolbar .admin-form-field {
+    flex: 1 1 280px;
+}
+
+.admin-assignment-list {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 370px), 1fr));
+}
+
+.admin-assignment-card {
+    background: rgba(13, 21, 30, 0.68);
+}
+
+.admin-panel-note {
+    line-height: 1.65;
+}
+
+@media (max-width: 760px) {
+    .admin-management-form {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .admin-management-toolbar {
+        align-items: stretch;
+    }
+
+    .admin-management-toolbar .admin-search-field,
+    .admin-management-filter {
+        max-width: none;
+        width: 100%;
+        flex-basis: 100%;
+    }
+
+    .admin-management-toolbar .admin-refresh-button {
+        flex: 1;
+    }
+
+    .admin-related-card {
+        padding: 15px;
+    }
+
+    .admin-assignment-toolbar .admin-form-field {
+        flex-basis: 100%;
+    }
+}
+
+@media (max-width: 480px) {
+    .admin-management-form {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .admin-record-heading {
+        flex-direction: column;
+        gap: 7px;
+    }
+
+    .admin-record-actions button {
+        flex: 1 1 auto;
+    }
+}
