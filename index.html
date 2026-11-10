@@ -264,6 +264,14 @@
             </button>
 
             <button
+                class="nav-item"
+                type="button"
+            >
+                <span>▤</span>
+                Instrukcje i Regulamin
+            </button>
+
+            <button
                 id="admin-nav-button"
                 class="nav-item"
                 type="button"
@@ -1194,6 +1202,28 @@
 
         </section>
 
+        <!-- ==================================
+             INSTRUKCJE I REGULAMIN
+        =================================== -->
+        <section id="help-center" class="help-center" aria-labelledby="help-center-title">
+            <div class="help-center-heading">
+                <div>
+                    <div class="eyebrow">CENTRUM INFORMACJI</div>
+                    <h2 id="help-center-title">Instrukcje i Regulamin</h2>
+                    <p>Wyjaśnienia funkcji SA Event Maps oraz zasady korzystania z platformy.</p>
+                </div>
+            </div>
+
+            <div class="help-document-tabs" role="tablist" aria-label="Rodzaj dokumentu">
+                <button id="help-tab-instructions" class="help-document-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="help-document-content" data-help-document-tab="instructions">Instrukcja obsługi</button>
+                <button id="help-tab-rules" class="help-document-tab" type="button" role="tab" aria-selected="false" aria-controls="help-document-content" data-help-document-tab="rules">Regulamin</button>
+            </div>
+
+            <div id="help-document-status" class="help-document-status" role="status" aria-live="polite">Treści zostaną pobrane po otwarciu tej sekcji.</div>
+            <div id="help-document-content" class="help-document-content" role="tabpanel" aria-labelledby="help-tab-instructions">
+                <div class="help-document-empty">Wybierz dokument, aby zobaczyć jego treść.</div>
+            </div>
+        </section>
 
         <!-- ==================================
              STOPKA
@@ -1259,7 +1289,6 @@
             <button class="admin-nav-item" type="button" data-admin-section="help">
                 <span class="admin-nav-icon">▤</span>
                 <span>Instrukcje i regulamin</span>
-                <small>Wkrótce</small>
             </button>
         </nav>
 
@@ -1662,6 +1691,7 @@
                         <li><strong>Bezpieczeństwo kont:</strong> plik zawiera adresy e-mail, identyfikatory kont i zapisane nicki, ale nie zawiera haseł, tokenów ani sesji. Nicki mogą zostać przywrócone; rangi administratora i oznaczenie właściciela nie są zmieniane przez import.</li>
                         <li><strong>Historia aktywności:</strong> kopia obejmuje dziennik activity_log. Przywracanie dopisuje również nowe wpisy opisujące operacje wykonane podczas odtwarzania.</li>
                         <li><strong>Pliki galerii:</strong> pełna kopia obejmuje metadane oraz binarną zawartość zdjęć z Supabase Storage, również zarchiwizowanych. Limit pojedynczej kopii wynosi 100 MiB.</li>
+                        <li><strong>Instrukcje i regulamin:</strong> pełna kopia obejmuje wszystkie rozdziały obu dokumentów, w tym nieopublikowane szkice.</li>
                         <li><strong>Integralność i przechowywanie:</strong> suma SHA-256 wykrywa przypadkowe zmiany pliku, ale nie szyfruje go ani nie jest podpisem kryptograficznym. Plik zawiera prywatne dane — przechowuj go w bezpiecznym miejscu i nie udostępniaj osobom nieupoważnionym.</li>
                     </ul>
                 </div>
@@ -1689,8 +1719,70 @@
                 </article>
             </section>
             <section class="admin-view" data-admin-view="help" aria-labelledby="admin-help-title" hidden>
-                <div class="admin-page-heading"><div><div class="eyebrow">INFORMACJE DLA GRACZY</div><h2 id="admin-help-title">Instrukcje i regulamin</h2><p>Treści pomocnicze i zasady korzystania z SA Event Maps.</p></div></div>
-                <div class="admin-coming-soon"><strong>Ta sekcja jest przygotowana do rozbudowy.</strong><span>Dodamy tutaj edytor instrukcji i regulaminu widocznego dla użytkowników.</span></div>
+                <div class="admin-page-heading">
+                    <div>
+                        <div class="eyebrow">INFORMACJE DLA GRACZY</div>
+                        <h2 id="admin-help-title">Instrukcje i Regulamin</h2>
+                        <p>Twórz rozdziały, edytuj treść, ustawiaj kolejność i decyduj, co jest widoczne dla użytkowników.</p>
+                    </div>
+                    <button id="admin-help-add-section" class="admin-primary-button" type="button">＋ Dodaj rozdział</button>
+                </div>
+
+                <div class="admin-help-toolbar">
+                    <div class="admin-help-tabs" role="tablist" aria-label="Edytowany dokument">
+                        <button class="admin-help-tab is-active" type="button" role="tab" aria-selected="true" data-help-document-tab="instructions">Instrukcja obsługi</button>
+                        <button class="admin-help-tab" type="button" role="tab" aria-selected="false" data-help-document-tab="rules">Regulamin</button>
+                    </div>
+                    <p>Rozdziały są zapisywane osobno. Zmiany pojawią się w widoku użytkowników po zapisaniu.</p>
+                </div>
+
+                <div id="admin-help-status" class="admin-panel-status" role="status" aria-live="polite">Rozdziały zostaną pobrane po otwarciu tej sekcji.</div>
+                <div id="admin-help-sections-list" class="admin-help-sections-list"></div>
+
+                <article id="admin-help-editor-card" class="admin-help-editor-card" hidden>
+                    <div class="admin-section-heading">
+                        <div>
+                            <h3 id="admin-help-editor-title">Nowy rozdział</h3>
+                            <p>Treść możesz formatować prostą składnią Markdown. Podgląd pokaże wygląd widoczny dla graczy.</p>
+                        </div>
+                    </div>
+                    <form id="admin-help-editor-form" class="admin-help-editor-form">
+                        <input id="admin-help-section-id" type="hidden">
+                        <label class="admin-form-field admin-form-field-wide" for="admin-help-section-title">
+                            <span>Tytuł rozdziału</span>
+                            <input id="admin-help-section-title" type="text" maxlength="160" required placeholder="Np. Resetowanie postępów">
+                        </label>
+                        <div class="admin-form-field admin-form-field-wide">
+                            <label for="admin-help-section-content">Treść rozdziału</label>
+                            <div class="admin-help-format-toolbar" aria-label="Formatowanie tekstu">
+                                <button class="admin-secondary-button" type="button" data-help-format="bold"><strong>B</strong> Pogrubienie</button>
+                                <button class="admin-secondary-button" type="button" data-help-format="italic"><em>I</em> Kursywa</button>
+                                <button class="admin-secondary-button" type="button" data-help-format="heading">Nagłówek</button>
+                                <button class="admin-secondary-button" type="button" data-help-format="list">Lista</button>
+                            </div>
+                            <textarea id="admin-help-section-content" rows="12" maxlength="40000" required placeholder="Wpisz treść rozdziału..."></textarea>
+                            <div class="admin-help-markdown-hint">
+                                Możesz użyć przycisków formatowania lub prostych oznaczeń: **pogrubienie**, *kursywa*, ## podnagłówek i listy. HTML ani skrypty nie są wykonywane.
+                            </div>
+                        </div>
+                        <label class="admin-help-publish-toggle" for="admin-help-section-published">
+                            <input id="admin-help-section-published" type="checkbox">
+                            <span>
+                                <strong>Opublikuj rozdział</strong>
+                                <small>Po włączeniu rozdział będzie widoczny w odpowiedniej zakładce użytkowników.</small>
+                            </span>
+                        </label>
+                        <div class="admin-help-editor-actions">
+                            <button id="admin-help-preview-button" class="admin-secondary-button" type="button">Podgląd</button>
+                            <button id="admin-help-cancel-button" class="admin-secondary-button" type="button">Anuluj</button>
+                            <button id="admin-help-save-button" class="admin-primary-button" type="submit">Zapisz rozdział</button>
+                        </div>
+                    </form>
+                    <div id="admin-help-preview" class="admin-help-preview" hidden>
+                        <div class="eyebrow">PODGLĄD DLA UŻYTKOWNIKÓW</div>
+                        <div id="admin-help-preview-content" class="help-document-article"></div>
+                    </div>
+                </article>
             </section>
         </div>
     </main>

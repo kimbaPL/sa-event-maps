@@ -112,6 +112,23 @@ functions or the admin-only data layer. This module owns only UI.
     const blockPlayerImageUploadsToggle = byId("admin-block-player-image-uploads");
     const imageSettingsStatus = byId("admin-image-settings-status");
 
+    const helpAddSectionButton = byId("admin-help-add-section");
+    const helpStatus = byId("admin-help-status");
+    const helpSectionsList = byId("admin-help-sections-list");
+    const helpEditorCard = byId("admin-help-editor-card");
+    const helpEditorForm = byId("admin-help-editor-form");
+    const helpEditorTitle = byId("admin-help-editor-title");
+    const helpSectionIdInput = byId("admin-help-section-id");
+    const helpSectionTitleInput = byId("admin-help-section-title");
+    const helpSectionContentInput = byId("admin-help-section-content");
+    const helpSectionPublishedInput = byId("admin-help-section-published");
+    const helpPreviewButton = byId("admin-help-preview-button");
+    const helpCancelButton = byId("admin-help-cancel-button");
+    const helpSaveButton = byId("admin-help-save-button");
+    const helpPreview = byId("admin-help-preview");
+    const helpPreviewContent = byId("admin-help-preview-content");
+    const helpDocumentTabs = [...workspace.querySelectorAll(".admin-help-tab[data-help-document-tab]")];
+
     const requiredElements = [
         supabase,
         dataApi,
@@ -204,7 +221,23 @@ functions or the admin-only data layer. This module owns only UI.
         backupEmailMatches,
         restoreBackupButton,
         blockPlayerImageUploadsToggle,
-        imageSettingsStatus
+        imageSettingsStatus,
+        helpAddSectionButton,
+        helpStatus,
+        helpSectionsList,
+        helpEditorCard,
+        helpEditorForm,
+        helpEditorTitle,
+        helpSectionIdInput,
+        helpSectionTitleInput,
+        helpSectionContentInput,
+        helpSectionPublishedInput,
+        helpPreviewButton,
+        helpCancelButton,
+        helpSaveButton,
+        helpPreview,
+        helpPreviewContent,
+        ...helpDocumentTabs
     ];
 
     if (requiredElements.some(element => !element)) {
@@ -232,6 +265,10 @@ functions or the admin-only data layer. This module owns only UI.
     let backupPreviewResult = null;
     let editingLocationImage = null;
     let locationImageRequestToken = 0;
+    let helpSections = [];
+    let activeHelpDocumentType = "instructions";
+    let isLoadingHelpSections = false;
+    let helpEditorInitialState = null;
 
     const sectionTitles = {
         users: "Użytkownicy i uprawnienia",
@@ -268,7 +305,319 @@ functions or the admin-only data layer. This module owns only UI.
         imageSettingsStatus.dataset.state = type;
     }
 
-    function closeAdminWorkspace() {
+    function setHelpStatus(message, type = "info") {
+        helpStatus.textContent = String(message || "");
+        helpStatus.dataset.state = type;
+    }
+
+    function escapeHelpHtml(value) {
+        return String(value ?? "").replace(/[&<>"']/g, character => ({
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            '"': "&quot;",
+            "'": "&#39;"
+        })[character]);
+    }
+
+    function renderHelpMarkdown(source) {
+        const lines = String(source || "").replace(/\r\n?/g, "\n").split("\n");
+        const output = [];
+        let paragraph = [];
+        let listItems = [];
+        const inline = value => escapeHelpHtml(value)
+            .replace(/`([^`]+)`/g, "<code>$1</code>")
+            .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+            .replace(/\*([^*]+)\*/g, "<em>$1</em>");
+        const flushParagraph = () => {
+            if (paragraph.length) {
+                output.push(`<p>${inline(paragraph.join(" "))}</p>`);
+                paragraph = [];
+            }
+        };
+        const flushList = () => {
+            if (listItems.length) {
+                output.push(`<ul>${listItems.map(item => `<li>${inline(item)}</li>`).join("")}</ul>`);
+                listItems = [];
+            }
+        };
+
+        for (const rawLine of lines) {
+            const line = rawLine.trim();
+            if (!line) {
+                flushParagraph();
+                flushList();
+                continue;
+            }
+            const heading = line.match(/^(#{1,3})\s+(.+)$/);
+            if (heading) {
+                flushParagraph();
+                flushList();
+                const level = Math.min(4, heading[1].length + 1);
+                output.push(`<h${level}>${inline(heading[2])}</h${level}>`);
+                continue;
+            }
+            const bullet = line.match(/^[-*]\s+(.+)$/);
+            if (bullet) {
+                flushParagraph();
+                listItems.push(bullet[1]);
+                continue;
+            }
+            flushList();
+            paragraph.push(line);
+        }
+        flushParagraph();
+        flushList();
+        return output.join("");
+    }
+
+    function applyHelpFormatting(format) {
+        const field = helpSectionContentInput;
+        const value = field.value;
+        const start = field.selectionStart ?? value.length;
+        const end = field.selectionEnd ?? start;
+        const selected = value.slice(start, end);
+
+        if (format === "heading" || format === "list") {
+            const lineStart = value.lastIndexOf("\n", Math.max(0, start - 1)) + 1;
+            const prefix = format === "heading" ? "## " : "- ";
+            if (value.slice(lineStart, lineStart + prefix.length) === prefix) return;
+            field.setRangeText(prefix, lineStart, lineStart, "end");
+            field.focus();
+            field.setSelectionRange(start + prefix.length, end + prefix.length);
+            return;
+        }
+
+        const before = format === "bold" ? "**" : "*";
+        const after = before;
+        const placeholder = format === "bold" ? "pogrubiony tekst" : "kursywa";
+        const text = selected || placeholder;
+        field.setRangeText(`${before}${text}${after}`, start, end, "select");
+        field.focus();
+        if (!selected) {
+            field.setSelectionRange(start + before.length, start + before.length + placeholder.length);
+        }
+    }
+
+    function renderHelpSections() {
+        const sections = helpSections.filter(section => section.documentType === activeHelpDocumentType);
+        helpSectionsList.replaceChildren();
+
+        helpDocumentTabs.forEach(tab => {
+            const active = tab.dataset.helpDocumentTab === activeHelpDocumentType;
+            tab.classList.toggle("is-active", active);
+            tab.setAttribute("aria-selected", active ? "true" : "false");
+        });
+
+        if (sections.length === 0) {
+            const empty = document.createElement("div");
+            empty.className = "admin-empty-state";
+            empty.textContent = activeHelpDocumentType === "instructions"
+                ? "Nie ma jeszcze rozdziałów instrukcji. Dodaj pierwszy rozdział, aby rozpocząć budowanie przewodnika."
+                : "Regulamin nie ma jeszcze rozdziałów. Możesz przygotować szkice, a następnie opublikować wyłącznie treści, które zatwierdzisz.";
+            helpSectionsList.appendChild(empty);
+            return;
+        }
+
+        sections.forEach((section, index) => {
+            const card = document.createElement("article");
+            card.className = `admin-help-section-card${section.isPublished ? " is-published" : " is-draft"}`;
+            const heading = document.createElement("div");
+            heading.className = "admin-help-section-heading";
+            const titleWrap = document.createElement("div");
+            const title = document.createElement("h3");
+            title.textContent = section.title;
+            const meta = document.createElement("p");
+            meta.textContent = `${index + 1}. rozdział · ${section.content.length.toLocaleString("pl-PL")} znaków`;
+            titleWrap.append(title, meta);
+            const state = document.createElement("span");
+            state.className = `admin-help-state ${section.isPublished ? "is-published" : "is-draft"}`;
+            state.textContent = section.isPublished ? "Opublikowany" : "Szkic";
+            heading.append(titleWrap, state);
+
+            const actions = document.createElement("div");
+            actions.className = "admin-help-section-actions";
+            const makeButton = (label, action, extraClass = "") => {
+                const button = document.createElement("button");
+                button.type = "button";
+                button.className = `admin-category-action ${extraClass}`.trim();
+                button.textContent = label;
+                button.dataset.helpAction = action;
+                button.dataset.recordId = section.id;
+                return button;
+            };
+            const up = makeButton("↑ Wyżej", "up");
+            const down = makeButton("↓ Niżej", "down");
+            up.disabled = index === 0;
+            down.disabled = index === sections.length - 1;
+            actions.append(
+                up,
+                down,
+                makeButton("Edytuj", "edit"),
+                makeButton("Usuń", "delete", "is-danger")
+            );
+            card.append(heading, actions);
+            helpSectionsList.appendChild(card);
+        });
+    }
+
+    async function loadHelpSections() {
+        if (isLoadingHelpSections) return;
+        isLoadingHelpSections = true;
+        helpAddSectionButton.disabled = true;
+        setHelpStatus("Pobieranie rozdziałów…", "loading");
+        try {
+            await getFreshAdminContext();
+            helpSections = await dataApi.listHelpDocumentSections();
+            renderHelpSections();
+            const published = helpSections.filter(section => section.isPublished).length;
+            setHelpStatus(`Pobrano ${helpSections.length} rozdziałów. Opublikowane: ${published}; szkice: ${helpSections.length - published}.`, "success");
+        } catch (error) {
+            setHelpStatus(error.message || "Nie udało się pobrać rozdziałów.", "error");
+        } finally {
+            isLoadingHelpSections = false;
+            helpAddSectionButton.disabled = false;
+        }
+    }
+
+    function hasUnsavedHelpChanges() {
+        if (helpEditorCard.hidden || !helpEditorInitialState) return false;
+        const current = {
+            id: helpSectionIdInput.value || null,
+            title: helpSectionTitleInput.value,
+            content: helpSectionContentInput.value,
+            isPublished: helpSectionPublishedInput.checked
+        };
+        return JSON.stringify(current) !== JSON.stringify(helpEditorInitialState);
+    }
+
+    function confirmDiscardHelpChanges() {
+        if (!hasUnsavedHelpChanges()) return true;
+        return window.confirm("Masz niezapisane zmiany w rozdziale. Czy chcesz je odrzucić?");
+    }
+
+    function showHelpEditor(section = null) {
+        if (!confirmDiscardHelpChanges()) return;
+        helpEditorForm.reset();
+        helpSectionIdInput.value = section?.id || "";
+        helpSectionTitleInput.value = section?.title || "";
+        helpSectionContentInput.value = section?.content || "";
+        helpSectionPublishedInput.checked = Boolean(section?.isPublished);
+        helpEditorTitle.textContent = section ? "Edytuj rozdział" : "Nowy rozdział";
+        helpSaveButton.textContent = section ? "Zapisz zmiany" : "Zapisz rozdział";
+        helpEditorInitialState = {
+            id: helpSectionIdInput.value || null,
+            title: helpSectionTitleInput.value,
+            content: helpSectionContentInput.value,
+            isPublished: helpSectionPublishedInput.checked
+        };
+        helpPreview.hidden = true;
+        helpEditorCard.hidden = false;
+        helpEditorCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        helpSectionTitleInput.focus();
+    }
+
+    function hideHelpEditor(force = false) {
+        if (!force && !confirmDiscardHelpChanges()) return false;
+        helpEditorCard.hidden = true;
+        helpEditorForm.reset();
+        helpSectionIdInput.value = "";
+        helpEditorInitialState = null;
+        helpPreview.hidden = true;
+        helpPreviewContent.replaceChildren();
+        return true;
+    }
+
+    async function saveHelpSection(event) {
+        event.preventDefault();
+        const id = helpSectionIdInput.value || null;
+        const existing = id ? helpSections.find(section => section.id === id) : null;
+        const nextOrder = existing?.sortOrder ?? (
+            Math.max(0, ...helpSections
+                .filter(section => section.documentType === activeHelpDocumentType)
+                .map(section => section.sortOrder)) + 10
+        );
+        helpSaveButton.disabled = true;
+        setHelpStatus("Zapisywanie rozdziału…", "loading");
+        try {
+            await getFreshAdminContext();
+            await dataApi.saveHelpDocumentSection({
+                id,
+                documentType: activeHelpDocumentType,
+                title: helpSectionTitleInput.value,
+                content: helpSectionContentInput.value,
+                sortOrder: nextOrder,
+                isPublished: helpSectionPublishedInput.checked
+            });
+            hideHelpEditor(true);
+            await loadHelpSections();
+            setHelpStatus("Rozdział został zapisany. Zmiany opublikowane są już widoczne w centrum informacji użytkowników.", "success");
+        } catch (error) {
+            setHelpStatus(error.message || "Nie udało się zapisać rozdziału.", "error");
+        } finally {
+            helpSaveButton.disabled = false;
+        }
+    }
+
+    async function handleHelpSectionAction(action, sectionId) {
+        const section = helpSections.find(item => item.id === sectionId);
+        if (!section) return;
+
+        if (action === "edit") {
+            showHelpEditor(section);
+            return;
+        }
+        if (action === "delete") {
+            if (!window.confirm(`Czy na pewno chcesz usunąć rozdział „${section.title}”? Tej operacji nie można cofnąć.`)) return;
+            setHelpStatus("Usuwanie rozdziału…", "loading");
+            try {
+                await getFreshAdminContext();
+                await dataApi.deleteHelpDocumentSection(section.id);
+                if (helpSectionIdInput.value === section.id) hideHelpEditor(true);
+                await loadHelpSections();
+                setHelpStatus(`Usunięto rozdział „${section.title}”.`, "success");
+            } catch (error) {
+                setHelpStatus(error.message || "Nie udało się usunąć rozdziału.", "error");
+            }
+            return;
+        }
+        if (action === "up" || action === "down") {
+            const ordered = helpSections
+                .filter(item => item.documentType === activeHelpDocumentType)
+                .sort((left, right) => left.sortOrder - right.sortOrder);
+            const index = ordered.findIndex(item => item.id === section.id);
+            const targetIndex = action === "up" ? index - 1 : index + 1;
+            if (index < 0 || targetIndex < 0 || targetIndex >= ordered.length) return;
+            [ordered[index], ordered[targetIndex]] = [ordered[targetIndex], ordered[index]];
+            helpSectionsList.querySelectorAll("button").forEach(button => { button.disabled = true; });
+            setHelpStatus("Zapisywanie nowej kolejności…", "loading");
+            try {
+                await getFreshAdminContext();
+                for (let orderIndex = 0; orderIndex < ordered.length; orderIndex += 1) {
+                    const item = ordered[orderIndex];
+                    await dataApi.saveHelpDocumentSection({
+                        id: item.id,
+                        documentType: item.documentType,
+                        title: item.title,
+                        content: item.content,
+                        sortOrder: (orderIndex + 1) * 10,
+                        isPublished: item.isPublished
+                    });
+                }
+                await loadHelpSections();
+                setHelpStatus("Zapisano kolejność rozdziałów.", "success");
+            } catch (error) {
+                setHelpStatus(error.message || "Nie udało się zmienić kolejności.", "error");
+                await loadHelpSections();
+            }
+        }
+    }
+
+    function closeAdminWorkspace(force = false) {
+        if (activeSection === "help") {
+            if (!force && !confirmDiscardHelpChanges()) return;
+            hideHelpEditor(true);
+        }
         workspace.hidden = true;
         appShell.hidden = false;
         navButton.classList.remove("is-active");
@@ -280,7 +629,7 @@ functions or the admin-only data layer. This module owns only UI.
         navButton.hidden = !allowed;
 
         if (!allowed) {
-            closeAdminWorkspace();
+            closeAdminWorkspace(true);
             users = [];
             categories = [];
             hasLoadedUsers = false;
@@ -362,6 +711,10 @@ functions or the admin-only data layer. This module owns only UI.
         if (!Object.hasOwn(sectionTitles, section)) {
             return;
         }
+        if (activeSection === "help" && section !== "help") {
+            if (!confirmDiscardHelpChanges()) return;
+            hideHelpEditor(true);
+        }
 
         activeSection = section;
         workspaceTitle.textContent = sectionTitles[section];
@@ -389,6 +742,9 @@ functions or the admin-only data layer. This module owns only UI.
         }
         if (section === "settings") {
             void loadImageUploadSettings();
+        }
+        if (section === "help") {
+            void loadHelpSections();
         }
     }
 
@@ -556,7 +912,8 @@ functions or the admin-only data layer. This module owns only UI.
             player_progress: "Postępy w wydarzeniach",
             player_catalog_progress: "Postępy w katalogu Wszystkie respy",
             activity_log: "Historia aktywności",
-            location_images: "Zdjęcia znajdziek"
+            location_images: "Zdjęcia znajdziek",
+            help_document_sections: "Rozdziały instrukcji i regulaminu"
         };
 
         backupCounts.replaceChildren();
@@ -2007,6 +2364,40 @@ functions or the admin-only data layer. This module owns only UI.
     previewBackupButton.addEventListener("click", () => void previewOrganizationBackupFile());
     restoreBackupButton.addEventListener("click", () => void restoreOrganizationBackupFile());
     blockPlayerImageUploadsToggle.addEventListener("change", () => void saveImageUploadSettings());
+
+    helpAddSectionButton.addEventListener("click", () => showHelpEditor());
+    helpCancelButton.addEventListener("click", hideHelpEditor);
+    helpEditorForm.addEventListener("submit", event => void saveHelpSection(event));
+    helpEditorCard.querySelectorAll("[data-help-format]").forEach(button => {
+        button.addEventListener("click", () => applyHelpFormatting(button.dataset.helpFormat));
+    });
+    helpPreviewButton.addEventListener("click", () => {
+        const title = helpSectionTitleInput.value.trim() || "Podgląd rozdziału";
+        const heading = document.createElement("h3");
+        heading.textContent = title;
+        const body = document.createElement("div");
+        body.innerHTML = renderHelpMarkdown(helpSectionContentInput.value);
+        helpPreviewContent.replaceChildren(heading, body);
+        helpPreview.hidden = false;
+    });
+    helpDocumentTabs.forEach(tab => {
+        tab.addEventListener("click", () => {
+            if (!confirmDiscardHelpChanges()) return;
+            activeHelpDocumentType = tab.dataset.helpDocumentTab;
+            hideHelpEditor(true);
+            renderHelpSections();
+            setHelpStatus(
+                activeHelpDocumentType === "instructions"
+                    ? "Edytujesz instrukcję obsługi."
+                    : "Edytujesz regulamin. Szkice nie są widoczne dla graczy, dopóki ich nie opublikujesz."
+            );
+        });
+    });
+    helpSectionsList.addEventListener("click", event => {
+        const button = event.target.closest("button[data-help-action]");
+        if (!button || button.disabled) return;
+        void handleHelpSectionAction(button.dataset.helpAction, button.dataset.recordId);
+    });
 
     supabase.auth.onAuthStateChange((_event, session) => {
         window.setTimeout(() => {

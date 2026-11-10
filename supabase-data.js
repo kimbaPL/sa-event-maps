@@ -332,6 +332,45 @@ The UI must not write directly to localStorage.
         return rows;
     }
 
+    function validateHelpDocumentBackup(backup) {
+        const rows = backup?.data?.help_document_sections;
+        if (rows === undefined) return []; // Older full backups remain compatible.
+        if (!Array.isArray(rows)) {
+            throw new Error("Kopia zawiera nieprawidłową listę rozdziałów instrukcji i regulaminu.");
+        }
+
+        const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const seen = new Set();
+        for (const row of rows) {
+            if (!row || !uuidPattern.test(String(row.id || ""))) {
+                throw new Error("Kopia zawiera rozdział bez prawidłowego identyfikatora.");
+            }
+            if (!["instructions", "rules"].includes(row.document_type)) {
+                throw new Error("Kopia zawiera nieprawidłowy rodzaj dokumentu.");
+            }
+            if (typeof row.title !== "string" || !row.title.trim() || row.title.length > 160) {
+                throw new Error("Kopia zawiera rozdział z nieprawidłowym tytułem.");
+            }
+            if (typeof row.content !== "string" || row.content.length > 40000) {
+                throw new Error("Kopia zawiera rozdział z nieprawidłową treścią.");
+            }
+            if (!Number.isInteger(Number(row.sort_order)) || Number(row.sort_order) < 0 || Number(row.sort_order) > 1000000) {
+                throw new Error("Kopia zawiera nieprawidłową kolejność rozdziału.");
+            }
+            if (row.is_published !== undefined && typeof row.is_published !== "boolean") {
+                throw new Error("Kopia zawiera nieprawidłowy stan publikacji rozdziału.");
+            }
+            for (const key of ["created_by", "updated_by"]) {
+                if (row[key] !== undefined && row[key] !== null && !uuidPattern.test(String(row[key]))) {
+                    throw new Error("Kopia zawiera nieprawidłowe dane autora rozdziału.");
+                }
+            }
+            if (seen.has(row.id)) throw new Error("Kopia zawiera powtórzony identyfikator rozdziału.");
+            seen.add(row.id);
+        }
+        return rows;
+    }
+
     async function getLocationImage(locationId) {
         if (!locationId) return null;
         const { data: image, error } = await supabase
@@ -443,6 +482,7 @@ The UI must not write directly to localStorage.
         await requireAdmin();
         const { images, files } = validateBackupImages(backup, { requireBinary: true });
         const catalogProgress = validateCatalogProgressBackup(backup);
+        const helpDocumentSections = validateHelpDocumentBackup(backup);
         const sanitized = backupWithoutBinaryPayload(backup);
         const { data, error } = await supabase.rpc("admin_preview_organization_backup", {
             p_backup: sanitized
@@ -454,6 +494,7 @@ The UI must not write directly to localStorage.
         data.counts.location_images = images.length;
         data.counts.storage_files = files.length;
         data.counts.player_catalog_progress = catalogProgress.length;
+        data.counts.help_document_sections = helpDocumentSections.length;
         return data;
     }
 
@@ -461,6 +502,7 @@ The UI must not write directly to localStorage.
         await requireAdmin();
         const { images, files } = validateBackupImages(backup, { requireBinary: true });
         validateCatalogProgressBackup(backup);
+        validateHelpDocumentBackup(backup);
         const sanitized = backupWithoutBinaryPayload(backup);
         const backupPaths = new Set(files.map(file => file.object_path));
         const locationIds = images.map(image => image.location_id);
@@ -1211,6 +1253,107 @@ The UI must not write directly to localStorage.
         return true;
     }
 
+    function mapHelpDocumentSection(row) {
+        return {
+            id: row.id,
+            documentType: row.document_type,
+            title: row.title,
+            content: row.content || "",
+            sortOrder: Number(row.sort_order) || 0,
+            isPublished: Boolean(row.is_published),
+            createdAt: row.created_at,
+            updatedAt: row.updated_at
+        };
+    }
+
+    async function getPublishedHelpSections() {
+        const { data, error } = await supabase
+            .from("help_document_sections")
+            .select("id, document_type, title, content, sort_order, is_published, created_at, updated_at")
+            .eq("is_published", true)
+            .order("document_type", { ascending: true })
+            .order("sort_order", { ascending: true })
+            .order("created_at", { ascending: true });
+
+        if (error) throwDatabaseError("help_document_sections", error);
+        return (data || []).map(mapHelpDocumentSection);
+    }
+
+    async function listHelpDocumentSections() {
+        await requireAdmin();
+        const rows = await fetchAllRows(
+            "help_document_sections",
+            "id, document_type, title, content, sort_order, is_published, created_at, updated_at",
+            query => query
+                .order("document_type", { ascending: true })
+                .order("sort_order", { ascending: true })
+                .order("created_at", { ascending: true })
+        );
+        return rows.map(mapHelpDocumentSection);
+    }
+
+    async function saveHelpDocumentSection(section) {
+        const user = await requireAdmin();
+        const documentType = String(section?.documentType || "");
+        const title = String(section?.title || "").trim();
+        const content = String(section?.content || "");
+        const sortOrder = Number(section?.sortOrder);
+        const isPublished = Boolean(section?.isPublished);
+
+        if (!new Set(["instructions", "rules"]).has(documentType)) {
+            throw new Error("Wybierz prawidłowy rodzaj dokumentu.");
+        }
+        if (!title || title.length > 160) {
+            throw new Error("Tytuł rozdziału musi mieć od 1 do 160 znaków.");
+        }
+        if (content.length > 40000) {
+            throw new Error("Treść rozdziału przekracza limit 40 000 znaków.");
+        }
+        if (!Number.isInteger(sortOrder) || sortOrder < 0 || sortOrder > 1000000) {
+            throw new Error("Kolejność rozdziału jest nieprawidłowa.");
+        }
+
+        const payload = {
+            document_type: documentType,
+            title,
+            content,
+            sort_order: sortOrder,
+            is_published: isPublished,
+            updated_by: user.id
+        };
+
+        let query;
+        if (section?.id) {
+            query = supabase
+                .from("help_document_sections")
+                .update(payload)
+                .eq("id", section.id);
+        } else {
+            query = supabase
+                .from("help_document_sections")
+                .insert({ ...payload, created_by: user.id });
+        }
+
+        const { data, error } = await query
+            .select("id, document_type, title, content, sort_order, is_published, created_at, updated_at")
+            .single();
+        if (error) throwDatabaseError("help_document_sections", error);
+        return mapHelpDocumentSection(data);
+    }
+
+    async function deleteHelpDocumentSection(sectionId) {
+        await requireAdmin();
+        const { data, error } = await supabase
+            .from("help_document_sections")
+            .delete()
+            .eq("id", sectionId)
+            .select("id")
+            .maybeSingle();
+        if (error) throwDatabaseError("help_document_sections", error);
+        if (!data) throw new Error("Nie znaleziono rozdziału lub nie udało się go usunąć.");
+        return true;
+    }
+
     async function setProgress(eventId, locationId, status, needsCheck) {
         const user = await getUserContext();
 
@@ -1420,6 +1563,10 @@ The UI must not write directly to localStorage.
         setProgress,
         setCatalogProgress,
         clearCatalogProgress,
+        getPublishedHelpSections,
+        listHelpDocumentSections,
+        saveHelpDocumentSection,
+        deleteHelpDocumentSection,
         listCategories,
         createCategory,
         updateCategory,

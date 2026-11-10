@@ -243,6 +243,9 @@ UUIDs are internal only. No visible location numbering.
     let gridLayer = null;
     let gridVisible = false;
     let bootstrapPromise = null;
+    let helpDocumentsLoaded = false;
+    let helpDocumentSections = [];
+    let activeHelpDocumentType = "instructions";
 
     // ================================================
     // 4. SMALL HELPERS
@@ -752,6 +755,7 @@ UUIDs are internal only. No visible location numbering.
 
         if (currentFilterId === "all") {
             const progress = getCatalogProgress(location.id);
+
             progressSelect.value = progress.status || "not_found";
             needsCheckInput.checked = Boolean(progress.needsCheck);
             progressSelect.disabled = Boolean(location.isArchived);
@@ -2184,6 +2188,131 @@ UUIDs are internal only. No visible location numbering.
     // 21. NAVIGATION
     // ================================================
 
+    function escapeHelpHtml(value) {
+        return String(value ?? "").replace(/[&<>"']/g, character => ({
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            '"': "&quot;",
+            "'": "&#39;"
+        })[character]);
+    }
+
+    function renderHelpMarkdown(source) {
+        const lines = String(source || "").replace(/\r\n?/g, "\n").split("\n");
+        const output = [];
+        let paragraph = [];
+        let listItems = [];
+
+        const inline = value => escapeHelpHtml(value)
+            .replace(/`([^`]+)`/g, "<code>$1</code>")
+            .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+            .replace(/\*([^*]+)\*/g, "<em>$1</em>");
+        const flushParagraph = () => {
+            if (paragraph.length) {
+                output.push(`<p>${inline(paragraph.join(" "))}</p>`);
+                paragraph = [];
+            }
+        };
+        const flushList = () => {
+            if (listItems.length) {
+                output.push(`<ul>${listItems.map(item => `<li>${inline(item)}</li>`).join("")}</ul>`);
+                listItems = [];
+            }
+        };
+
+        for (const rawLine of lines) {
+            const line = rawLine.trim();
+            if (!line) {
+                flushParagraph();
+                flushList();
+                continue;
+            }
+            const heading = line.match(/^(#{1,3})\s+(.+)$/);
+            if (heading) {
+                flushParagraph();
+                flushList();
+                const level = Math.min(4, heading[1].length + 1);
+                output.push(`<h${level}>${inline(heading[2])}</h${level}>`);
+                continue;
+            }
+            const bullet = line.match(/^[-*]\s+(.+)$/);
+            if (bullet) {
+                flushParagraph();
+                listItems.push(bullet[1]);
+                continue;
+            }
+            flushList();
+            paragraph.push(line);
+        }
+        flushParagraph();
+        flushList();
+        return output.join("");
+    }
+
+    function renderHelpDocument() {
+        const content = byId("help-document-content");
+        const status = byId("help-document-status");
+        if (!content || !status) return;
+
+        content.replaceChildren();
+        content.setAttribute(
+            "aria-labelledby",
+            activeHelpDocumentType === "instructions" ? "help-tab-instructions" : "help-tab-rules"
+        );
+
+        const sections = helpDocumentSections.filter(section => section.documentType === activeHelpDocumentType);
+        if (sections.length === 0) {
+            const empty = document.createElement("div");
+            empty.className = "help-document-empty";
+            empty.textContent = activeHelpDocumentType === "instructions"
+                ? "Instrukcja jest obecnie przygotowywana przez administratora."
+                : "Regulamin nie został jeszcze opublikowany. Administrator może go uzupełnić w panelu administracyjnym.";
+            content.appendChild(empty);
+            status.textContent = "Nie ma obecnie opublikowanych rozdziałów tej części.";
+            return;
+        }
+
+        status.textContent = `Opublikowane rozdziały: ${sections.length}.`;
+        for (const section of sections) {
+            const article = document.createElement("article");
+            article.className = "help-document-article";
+            const heading = document.createElement("h3");
+            heading.textContent = section.title;
+            const body = document.createElement("div");
+            body.className = "help-document-article-body";
+            body.innerHTML = renderHelpMarkdown(section.content);
+            article.append(heading, body);
+            content.appendChild(article);
+        }
+    }
+
+    async function loadHelpCenter(force = false) {
+        const status = byId("help-document-status");
+        if (!status) return;
+        if (helpDocumentsLoaded && !force) {
+            renderHelpDocument();
+            return;
+        }
+
+        status.textContent = "Pobieranie instrukcji i regulaminu…";
+        try {
+            helpDocumentSections = await dataApi.getPublishedHelpSections();
+            helpDocumentsLoaded = true;
+            renderHelpDocument();
+        } catch (error) {
+            console.error("SA Event Maps: Nie udało się pobrać instrukcji i regulaminu.", error);
+            status.textContent = error.message || "Nie udało się pobrać treści. Spróbuj odświeżyć stronę.";
+            const content = byId("help-document-content");
+            if (content) {
+                const empty = document.createElement("div");
+                empty.className = "help-document-empty is-error";
+                empty.textContent = "Nie udało się załadować dokumentu. Sprawdź połączenie i spróbuj ponownie.";
+                content.replaceChildren(empty);
+            }
+        }
+    }
+
     function setupNavigation() {
         const buttons = [
             ...document.querySelectorAll(".navigation .nav-item")
@@ -2192,7 +2321,8 @@ UUIDs are internal only. No visible location numbering.
         const targets = [
             document.querySelector(".workspace-grid"),
             document.querySelector(".catalog-panel"),
-            document.querySelector(".event-management")
+            document.querySelector(".event-management"),
+            byId("help-center")
         ];
 
         buttons.forEach((button, index) => {
@@ -2205,6 +2335,9 @@ UUIDs are internal only. No visible location numbering.
                     elements.eventFilter.value = "all";
                     renderApplication();
                 }
+                if (index === 3) {
+                    void loadHelpCenter(true);
+                }
 
                 target.scrollIntoView({
                     behavior: "smooth",
@@ -2213,6 +2346,19 @@ UUIDs are internal only. No visible location numbering.
 
                 buttons.forEach(item => item.classList.remove("is-active"));
                 button.classList.add("is-active");
+            });
+        });
+
+        document.querySelectorAll("[data-help-document-tab]").forEach(button => {
+            if (button.closest(".admin-workspace")) return;
+            button.addEventListener("click", () => {
+                activeHelpDocumentType = button.dataset.helpDocumentTab;
+                document.querySelectorAll("#help-center [data-help-document-tab]").forEach(tab => {
+                    const active = tab === button;
+                    tab.classList.toggle("is-active", active);
+                    tab.setAttribute("aria-selected", active ? "true" : "false");
+                });
+                renderHelpDocument();
             });
         });
     }
