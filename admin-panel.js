@@ -639,61 +639,62 @@ functions or the admin-only data layer. This module owns only UI.
     }
 
     function renderHelpMarkdown(source) {
-        const lines = String(source || "").replace(/\r\n?/g, "\n").split("\n");
+        const normalizedSource = String(source ?? "").replace(/\r\n?/g, "\n");
+        if (!normalizedSource) return "";
+
+        const lines = normalizedSource.split("\n");
         const output = [];
-        let paragraph = [];
         let listItems = [];
         let listType = null;
+
         const inline = value => escapeHelpHtml(value)
             .replace(/`([^`]+)`/g, "<code>$1</code>")
             .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-            .replace(/\*([^*]+)\*/g, "<em>$1</em>");
-        const flushParagraph = () => {
-            if (paragraph.length) {
-                output.push(`<p>${inline(paragraph.join(" "))}</p>`);
-                paragraph = [];
-            }
-        };
+            .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+            .replace(/~~([^~]+)~~/g, "<del>$1</del>");
+
         const flushList = () => {
-            if (listItems.length) {
-                const tag = listType === "ol" ? "ol" : "ul";
-                output.push(`<${tag}>${listItems.map(item => `<li>${inline(item)}</li>`).join("")}</${tag}>`);
-                listItems = [];
-                listType = null;
-            }
+            if (!listItems.length) return;
+            const tag = listType === "ol" ? "ol" : "ul";
+            output.push(`<${tag}>${listItems.map(item => `<li>${inline(item)}</li>`).join("")}</${tag}>`);
+            listItems = [];
+            listType = null;
         };
 
         for (const rawLine of lines) {
             const line = rawLine.trim();
+
+            // Every Enter is meaningful: an empty source line becomes visible vertical space.
             if (!line) {
-                flushParagraph();
                 flushList();
+                output.push('<div class="help-document-line help-document-line--blank" aria-hidden="true">&nbsp;</div>');
                 continue;
             }
+
             const heading = line.match(/^(#{1,3})\s+(.+)$/);
             if (heading) {
-                flushParagraph();
                 flushList();
                 const level = Math.min(4, heading[1].length + 1);
                 output.push(`<h${level}>${inline(heading[2])}</h${level}>`);
                 continue;
             }
+
             const bullet = line.match(/^[-*]\s+(.+)$/);
             const numbered = line.match(/^\d+[.)]\s+(.+)$/);
             if (bullet || numbered) {
-                flushParagraph();
                 const nextListType = numbered ? "ol" : "ul";
-                if (listType && listType !== nextListType) {
-                    flushList();
-                }
+                if (listType && listType !== nextListType) flushList();
                 listType = nextListType;
                 listItems.push((numbered || bullet)[1]);
                 continue;
             }
+
             flushList();
-            paragraph.push(line);
+            // Do not join lines into a paragraph: preserve the author's exact Enter layout.
+            // Keep the raw line so intentional spaces at its beginning/end remain visible too.
+            output.push(`<div class="help-document-line">${inline(rawLine)}</div>`);
         }
-        flushParagraph();
+
         flushList();
         return output.join("");
     }
@@ -2959,6 +2960,7 @@ Konto i możliwość logowania zostaną usunięte. Wspólne znajdźki, przypisan
         const heading = document.createElement("h3");
         heading.textContent = title;
         const body = document.createElement("div");
+        body.className = "help-document-article-body";
         body.innerHTML = renderHelpMarkdown(helpSectionContentInput.value);
         helpPreviewContent.replaceChildren(heading, body);
         helpPreview.hidden = false;

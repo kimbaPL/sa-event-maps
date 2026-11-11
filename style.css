@@ -4498,6 +4498,11 @@ body.has-image-lightbox {
 }
 
 .help-document-article {
+    max-height: min(440px, 65vh);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
     padding: 20px 21px;
     border: 1px solid var(--border);
     border-radius: 10px;
@@ -4517,6 +4522,19 @@ body.has-image-lightbox {
     font-size: 12px;
     line-height: 1.8;
     overflow-wrap: anywhere;
+}
+
+.help-document-article-body .help-document-line,
+.admin-help-preview .help-document-line {
+    display: block;
+    min-height: 1.8em;
+    line-height: inherit;
+    white-space: pre-wrap;
+}
+
+.help-document-article-body .help-document-line--blank,
+.admin-help-preview .help-document-line--blank {
+    min-height: 1.8em;
 }
 
 .help-document-article-body p,
