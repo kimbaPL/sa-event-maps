@@ -2436,6 +2436,13 @@ textarea {
     color: var(--blue);
 }
 
+.permanently-delete-location-action {
+    display: block;
+    width: 100%;
+    min-height: 37px;
+    margin-top: 7px;
+}
+
 @media (max-width: 560px) {
     .progress-editor {
         margin-left: 15px;
@@ -3528,6 +3535,11 @@ textarea {
 .admin-status-pill.is-archived {
     border-color: rgba(141, 155, 170, 0.25);
     color: #aab6c2;
+}
+
+.admin-status-pill.is-pending {
+    border-color: rgba(237, 176, 98, 0.38);
+    color: #e6b16e;
 }
 
 .admin-record-actions {
@@ -4763,82 +4775,4 @@ body.has-image-lightbox {
 .admin-help-format-toolbar button em {
     margin-right: 3px;
     color: var(--accent);
-}
-
-/* =========================================
-   FULL-SCREEN HELP AND RULES WORKSPACE
-   ========================================= */
-
-.help-workspace {
-    position: fixed;
-    inset: 0;
-    z-index: 1200;
-    width: 100%;
-    height: 100vh;
-    height: 100dvh;
-    min-height: 100vh;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-}
-
-.help-workspace[hidden] {
-    display: none !important;
-}
-
-body.is-help-workspace {
-    overflow: hidden;
-}
-
-.help-workspace-main {
-    min-height: 100vh;
-}
-
-.help-workspace-topbar {
-    position: sticky;
-    top: 0;
-    z-index: 5;
-    backdrop-filter: blur(14px);
-}
-
-.help-workspace-content {
-    width: 100%;
-    max-width: 1480px;
-    margin: 0 auto;
-    padding: 34px 36px 52px;
-}
-
-.help-workspace-content .help-center {
-    margin: 0;
-}
-
-@media (max-width: 850px) {
-    .help-workspace-topbar {
-        min-height: 76px;
-        padding: 14px 18px;
-    }
-
-    .help-workspace-content {
-        padding: 22px 18px 38px;
-    }
-}
-
-@media (max-width: 560px) {
-    .help-workspace-topbar {
-        align-items: center;
-        gap: 10px;
-    }
-
-    .help-workspace-topbar .admin-back-button {
-        min-height: 36px;
-        padding: 0 10px;
-        font-size: 10px;
-    }
-
-    .help-workspace-content {
-        padding: 16px 12px 30px;
-    }
-
-    .help-workspace-content .help-center {
-        padding: 18px;
-    }
 }

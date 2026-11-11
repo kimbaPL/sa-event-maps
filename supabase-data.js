@@ -159,6 +159,42 @@ The UI must not write directly to localStorage.
         };
     }
 
+    async function getLocationImageUploadState(locationId) {
+        if (!locationId) throw new Error("Brakuje identyfikatora znajdźki.");
+        const { data, error } = await supabase.rpc("get_location_image_upload_state", {
+            p_location_id: locationId
+        });
+        if (error) throwDatabaseError("get_location_image_upload_state", error);
+        return {
+            hasImage: Boolean(data?.has_image),
+            canUpload: Boolean(data?.can_upload),
+            playerUploadsEnabled: Boolean(data?.player_uploads_enabled),
+            isAdmin: Boolean(data?.is_admin),
+            deletionPending: Boolean(data?.deletion_pending)
+        };
+    }
+
+    async function getLocationDeleteImpact(locationId) {
+        if (!locationId) throw new Error("Brakuje identyfikatora znajdźki.");
+        const { data, error } = await supabase.rpc("get_location_delete_impact", {
+            p_location_id: locationId
+        });
+        if (error) throwDatabaseError("get_location_delete_impact", error);
+        return {
+            locationId: data?.location_id,
+            locationName: data?.location_name || "Znajdźka",
+            isPinned: Boolean(data?.is_pinned),
+            isArchived: Boolean(data?.is_archived),
+            eventNames: Array.isArray(data?.event_names) ? data.event_names : [],
+            assignmentCount: Number(data?.assignment_count) || 0,
+            eventProgressCount: Number(data?.event_progress_count) || 0,
+            catalogProgressCount: Number(data?.catalog_progress_count) || 0,
+            imageCount: Number(data?.image_count) || 0,
+            storageObjectCount: Number(data?.storage_object_count) || 0,
+            deletionPending: Boolean(data?.deletion_pending)
+        };
+    }
+
     async function compressLocationImage(file) {
         if (!(file instanceof Blob) || file.size <= 0) {
             throw new Error("Wybierz prawidłowy plik graficzny.");
@@ -670,6 +706,8 @@ The UI must not write directly to localStorage.
             createdBy: row.created_by,
             isPinned: Boolean(row.is_pinned),
             isArchived: Boolean(row.is_archived),
+            isDeletionPending: Boolean(row.deletion_requested_at),
+            deletionRequestedBy: row.deletion_requested_by || null,
             archivedAt: row.archived_at,
             archivedBy: row.archived_by,
             createdAt: row.created_at,
@@ -757,7 +795,7 @@ The UI must not write directly to localStorage.
         ] = await Promise.all([
             fetchAllRows(
                 "locations",
-                "id, name, area, game_x, game_y, game_z, description, created_by, is_pinned, is_archived, archived_at, archived_by, created_at, updated_at",
+                "id, name, area, game_x, game_y, game_z, description, created_by, is_pinned, is_archived, deletion_requested_at, deletion_requested_by, archived_at, archived_by, created_at, updated_at",
                 query => query.order("created_at", { ascending: true })
             ),
             fetchAllRows(
@@ -823,7 +861,7 @@ The UI must not write directly to localStorage.
         await requireAdmin();
         const rows = await fetchAllRows(
             "locations",
-            "id, name, area, game_x, game_y, game_z, description, created_by, is_pinned, is_archived, archived_at, archived_by, created_at, updated_at",
+            "id, name, area, game_x, game_y, game_z, description, created_by, is_pinned, is_archived, deletion_requested_at, deletion_requested_by, archived_at, archived_by, created_at, updated_at",
             query => query.order("created_at", { ascending: false })
         );
         return rows.map(mapLocation);
@@ -877,7 +915,7 @@ The UI must not write directly to localStorage.
         const { data, error } = await supabase
             .from("locations")
             .insert(row)
-            .select("id, name, area, game_x, game_y, game_z, description, created_by, is_pinned, is_archived, archived_at, archived_by, created_at, updated_at")
+            .select("id, name, area, game_x, game_y, game_z, description, created_by, is_pinned, is_archived, deletion_requested_at, deletion_requested_by, archived_at, archived_by, created_at, updated_at")
             .single();
 
         if (error) {
@@ -924,7 +962,7 @@ The UI must not write directly to localStorage.
             .from("locations")
             .update(update)
             .eq("id", locationId)
-            .select("id, name, area, game_x, game_y, game_z, description, created_by, is_pinned, is_archived, archived_at, archived_by, created_at, updated_at")
+            .select("id, name, area, game_x, game_y, game_z, description, created_by, is_pinned, is_archived, deletion_requested_at, deletion_requested_by, archived_at, archived_by, created_at, updated_at")
             .maybeSingle();
 
         if (error) {
@@ -939,27 +977,21 @@ The UI must not write directly to localStorage.
     }
 
     async function setLocationPinned(locationId, pinned) {
-        await requireAdmin();
+        if (!locationId) throw new Error("Brakuje identyfikatora lokalizacji.");
+
+        const { data: result, error: rpcError } = await supabase.rpc("set_location_pinned", {
+            p_location_id: locationId,
+            p_pinned: Boolean(pinned)
+        });
+        if (rpcError) throwDatabaseError("set_location_pinned", rpcError);
+        if (!result?.id) throw new Error("Nie udało się zmienić przypięcia tej lokalizacji.");
 
         const { data, error } = await supabase
             .from("locations")
-            .update({
-                is_pinned: Boolean(pinned),
-                updated_at: new Date().toISOString()
-            })
+            .select("id, name, area, game_x, game_y, game_z, description, created_by, is_pinned, is_archived, deletion_requested_at, deletion_requested_by, archived_at, archived_by, created_at, updated_at")
             .eq("id", locationId)
-            .eq("is_archived", false)
-            .select("id, name, area, game_x, game_y, game_z, description, created_by, is_pinned, is_archived, archived_at, archived_by, created_at, updated_at")
-            .maybeSingle();
-
-        if (error) {
-            throwDatabaseError("locations", error);
-        }
-
-        if (!data) {
-            throw new Error("Nie udało się zmienić przypięcia tej lokalizacji.");
-        }
-
+            .single();
+        if (error) throwDatabaseError("locations", error);
         return mapLocation(data);
     }
 
@@ -1003,7 +1035,7 @@ The UI must not write directly to localStorage.
             })
             .eq("id", locationId)
             .eq("is_archived", true)
-            .select("id, name, area, game_x, game_y, game_z, description, created_by, is_pinned, is_archived, archived_at, archived_by, created_at, updated_at")
+            .select("id, name, area, game_x, game_y, game_z, description, created_by, is_pinned, is_archived, deletion_requested_at, deletion_requested_by, archived_at, archived_by, created_at, updated_at")
             .maybeSingle();
 
         if (error) throwDatabaseError("locations", error);
@@ -1012,13 +1044,48 @@ The UI must not write directly to localStorage.
     }
 
     async function deleteLocation(locationId) {
-        await requireAdmin();
-        const { data, error } = await supabase.rpc("admin_delete_location", {
+        await getUserContext();
+        if (!locationId) throw new Error("Brakuje identyfikatora lokalizacji.");
+
+        // Phase 1 locks the row and all related writes, and returns every
+        // private Storage object under this location's UUID.
+        const { data: begun, error: beginError } = await supabase.rpc("begin_location_deletion", {
             p_location_id: locationId
         });
-        if (error) throwDatabaseError("locations", error);
-        if (data !== true) throw new Error("Nie udało się trwale usunąć lokalizacji.");
-        return true;
+        if (beginError) throwDatabaseError("begin_location_deletion", beginError);
+
+        const storagePaths = Array.isArray(begun?.storage_paths) ? begun.storage_paths : [];
+        if (storagePaths.length) {
+            const { error: storageError } = await supabase.storage
+                .from(IMAGE_BUCKET)
+                .remove(storagePaths);
+            if (storageError) {
+                // Do not unlock the row here. Some objects could already have
+                // been removed; retrying the same operation is safe because
+                // begin_location_deletion returns only objects still in Storage.
+                const retryError = new Error(
+                    `Nie udało się jeszcze usunąć wszystkich zdjęć z prywatnego Storage. Pinezka została zabezpieczona przed dalszymi zmianami. Kliknij „Usuń na stałe” ponownie, aby dokończyć operację. Szczegóły: ${storageError.message || "błąd Storage"}`
+                );
+                retryError.locationDeletionPending = true;
+                throw retryError;
+            }
+        }
+
+        // Phase 2 verifies that Storage is empty, then removes the location,
+        // event assignments, all players' event/catalog statuses and metadata
+        // in one database transaction.
+        const { data: completed, error: finalizeError } = await supabase.rpc("finalize_location_deletion", {
+            p_location_id: locationId
+        });
+        if (finalizeError) {
+            const retryError = new Error(
+                `Zdjęcia zostały obsłużone, ale baza nie zakończyła jeszcze usuwania pinezki. Lokalizacja pozostaje zabezpieczona; ponów „Usuń na stałe”. Szczegóły: ${finalizeError.message || "błąd bazy"}`
+            );
+            retryError.locationDeletionPending = true;
+            throw retryError;
+        }
+        if (!completed?.deleted) throw new Error("Nie udało się trwale usunąć lokalizacji.");
+        return completed;
     }
 
     async function createEvent(input) {
@@ -1538,6 +1605,8 @@ The UI must not write directly to localStorage.
         restoreOrganizationBackup,
         getImageUploadSettings,
         setPlayerImageUploadsEnabled,
+        getLocationImageUploadState,
+        getLocationDeleteImpact,
         prepareLocationImage: compressLocationImage,
         uploadLocationImage,
         getLocationImage,

@@ -230,6 +230,8 @@ UUIDs are internal only. No visible location numbering.
     let currentFilterId = "all";
     let editingEventId = null;
     let editingLocationId = null;
+    let editingLocationHasImage = false;
+    let editingLocationCanUploadImage = false;
     let imageUploadsEnabled = true;
     let selectedLocationImage = null;
     let selectedImageRenderToken = 0;
@@ -246,8 +248,6 @@ UUIDs are internal only. No visible location numbering.
     let helpDocumentsLoaded = false;
     let helpDocumentSections = [];
     let activeHelpDocumentType = "instructions";
-    let helpWorkspaceScrollPosition = 0;
-    let helpReturnNavigationButton = null;
 
     // ================================================
     // 4. SMALL HELPERS
@@ -272,26 +272,32 @@ UUIDs are internal only. No visible location numbering.
     }
 
     function updateImageUploadAvailability() {
-        const isCreatingLocation = !editingLocationId;
-        const canUpload = Boolean(currentUser?.isAdmin || imageUploadsEnabled);
+        const isEditingLocation = Boolean(editingLocationId);
+        const hasImage = isEditingLocation && editingLocationHasImage;
+        const canUpload = isEditingLocation
+            ? editingLocationCanUploadImage
+            : Boolean(currentUser?.isAdmin || imageUploadsEnabled);
+
         if (form.imageFile) {
-            form.imageFile.disabled = !canUpload || !isCreatingLocation;
+            form.imageFile.disabled = !canUpload || hasImage;
         }
         if (form.imageUploadGroup) {
-            form.imageUploadGroup.hidden = !isCreatingLocation;
+            form.imageUploadGroup.hidden = false;
         }
         if (form.imageFileStatus) {
-            if (!isCreatingLocation) {
-                form.imageFileStatus.textContent = "Zdjęcie można dodać podczas tworzenia znajdźki. Po przypięciu pinezki zarządza nim administrator.";
+            if (hasImage) {
+                form.imageFileStatus.textContent = "Ta znajdźka ma już przypisane zdjęcie. Aby dodać inne, administrator musi najpierw trwale usunąć obecny plik.";
             } else if (!canUpload) {
                 form.imageFileStatus.textContent = "Administrator zablokował dodawanie nowych zdjęć. Istniejące zdjęcia pozostają widoczne.";
+            } else if (isEditingLocation) {
+                form.imageFileStatus.textContent = "Ta znajdźka nie ma zdjęcia. Możesz dodać jedno teraz — zostanie automatycznie skompresowane do WebP.";
             } else {
                 form.imageFileStatus.textContent = "Opcjonalnie — jedno zdjęcie na znajdźkę. Zostanie automatycznie zmniejszone do WebP przed wysłaniem.";
             }
         }
     }
 
-    async function prepareImageForNewLocation(file) {
+    async function prepareImageForLocation(file) {
         if (!file) return null;
         const settings = await dataApi.getImageUploadSettings();
         if (!settings.allowPlayerUploads && !currentUser?.isAdmin) {
@@ -319,7 +325,8 @@ UUIDs are internal only. No visible location numbering.
             elements.selectedImage.alt = `Zdjęcie znajdźki: ${elements.selectedName.textContent}`;
             elements.selectedImageContainer.hidden = false;
             elements.selectedImageArchivedLabel.hidden = !image.is_archived;
-            elements.selectedImageAdminActions.hidden = !isAdmin();
+            const imageLocation = getLocationById(locationId);
+            elements.selectedImageAdminActions.hidden = !isAdmin() || Boolean(imageLocation?.isDeletionPending);
             elements.archiveSelectedImage.hidden = image.is_archived;
             elements.restoreSelectedImage.hidden = !image.is_archived;
             updateImageUploadAvailability();
@@ -353,7 +360,8 @@ UUIDs are internal only. No visible location numbering.
     }
 
     async function runSelectedImageAction(action) {
-        if (!isAdmin() || !selectedLocationImage) return;
+        const location = getLocationById(selectedLocationId);
+        if (!isAdmin() || !selectedLocationImage || location?.isDeletionPending) return;
         const image = selectedLocationImage;
         if (action === "delete") {
             const accepted = window.confirm(
@@ -370,6 +378,12 @@ UUIDs are internal only. No visible location numbering.
             if (action === "restore") await dataApi.restoreLocationImage(image.id);
             if (action === "delete") await dataApi.deleteLocationImage(image.id);
             selectedLocationImage = null;
+            if (action === "delete" && editingLocationId === selectedLocationId) {
+                editingLocationHasImage = false;
+                editingLocationCanUploadImage = Boolean(currentUser?.isAdmin || imageUploadsEnabled);
+                form.imageFile.value = "";
+                updateImageUploadAvailability();
+            }
             await renderSelectedLocationImage(selectedLocationId);
             setEditorStatus(
                 action === "archive" ? "Zdjęcie zostało zarchiwizowane. Plik nadal zajmuje miejsce w Storage." :
@@ -498,7 +512,7 @@ UUIDs are internal only. No visible location numbering.
     }
 
     function canEditLocation(location) {
-        if (!location || location.isArchived) return false;
+        if (!location || location.isArchived || location.isDeletionPending) return false;
         if (isAdmin()) return true;
 
         return (
@@ -510,7 +524,7 @@ UUIDs are internal only. No visible location numbering.
     function canMoveLocation(location) {
         return (
             canEditLocation(location) &&
-            !location.isPinned &&
+            (!location.isPinned || isAdmin()) &&
             !location.isArchived
         );
     }
@@ -649,6 +663,7 @@ UUIDs are internal only. No visible location numbering.
     let needsCheckInput = null;
     let editLocationButton = null;
     let pinLocationButton = null;
+    let permanentlyDeleteLocationButton = null;
 
     function ensureProgressPanel() {
         if (progressPanel) return;
@@ -709,8 +724,22 @@ UUIDs are internal only. No visible location numbering.
             editLocationButton.id = "edit-selected-pin";
             editLocationButton.className = "secondary-location-action";
             editLocationButton.textContent = "Edytuj własną znajdźkę";
-            editLocationButton.addEventListener("click", beginEditSelectedLocation);
+            editLocationButton.addEventListener("click", () => {
+                void beginEditSelectedLocation();
+            });
             actions.prepend(editLocationButton);
+        }
+
+        if (!permanentlyDeleteLocationButton) {
+            permanentlyDeleteLocationButton = document.createElement("button");
+            permanentlyDeleteLocationButton.type = "button";
+            permanentlyDeleteLocationButton.id = "permanently-delete-selected-pin";
+            permanentlyDeleteLocationButton.className = "danger-location-action permanently-delete-location-action";
+            permanentlyDeleteLocationButton.textContent = "Usuń znajdźkę na stałe";
+            permanentlyDeleteLocationButton.addEventListener("click", () => {
+                void permanentlyDeleteSelectedLocation();
+            });
+            editLocationButton.after(permanentlyDeleteLocationButton);
         }
 
         if (!pinLocationButton) {
@@ -718,7 +747,7 @@ UUIDs are internal only. No visible location numbering.
             pinLocationButton.type = "button";
             pinLocationButton.id = "toggle-selected-pin";
             pinLocationButton.className = "secondary-location-action";
-            pinLocationButton.textContent = "Przypnij pinezkę";
+            pinLocationButton.textContent = "Zatwierdź i przypnij pinezkę";
             pinLocationButton.addEventListener("click", () => {
                 void toggleSelectedPin();
             });
@@ -760,13 +789,15 @@ UUIDs are internal only. No visible location numbering.
 
             progressSelect.value = progress.status || "not_found";
             needsCheckInput.checked = Boolean(progress.needsCheck);
-            progressSelect.disabled = Boolean(location.isArchived);
-            needsCheckInput.disabled = Boolean(location.isArchived);
+            progressSelect.disabled = Boolean(location.isArchived || location.isDeletionPending);
+            needsCheckInput.disabled = Boolean(location.isArchived || location.isDeletionPending);
 
             contextLabel.textContent = "Wszystkie respy znajdziek";
-            help.textContent = location.isArchived
-                ? "Zarchiwizowana lokalizacja jest tylko do odczytu."
-                : "Te statusy są wyłącznie Twoje. Nie przypisują znajdźki do wydarzenia ani nie zmieniają jego postępu.";
+            help.textContent = location.isDeletionPending
+                ? "Trwa trwałe usuwanie tej lokalizacji. Zmiana statusów jest chwilowo zablokowana."
+                : location.isArchived
+                    ? "Zarchiwizowana lokalizacja jest tylko do odczytu."
+                    : "Te statusy są wyłącznie Twoje. Nie przypisują znajdźki do wydarzenia ani nie zmieniają jego postępu.";
 
             elements.selectedStatus.textContent =
                 `${PROGRESS_STATUS[progress.status]?.label || "Nieznaleziona"}${progress.needsCheck ? " · Do sprawdzenia" : ""}`;
@@ -788,13 +819,15 @@ UUIDs are internal only. No visible location numbering.
         progressSelect.value = progress.status || "not_found";
         needsCheckInput.checked = Boolean(progress.needsCheck);
 
-        progressSelect.disabled = archived || location.isArchived;
-        needsCheckInput.disabled = archived || location.isArchived;
+        progressSelect.disabled = archived || location.isArchived || location.isDeletionPending;
+        needsCheckInput.disabled = archived || location.isArchived || location.isDeletionPending;
 
         contextLabel.textContent = `Wydarzenie: ${contextEvent.name}`;
-        help.textContent = archived
-            ? "Zarchiwizowane wydarzenie jest tylko do odczytu."
-            : "Zmiana dotyczy wyłącznie Twojego postępu w tym wydarzeniu.";
+        help.textContent = location.isDeletionPending
+            ? "Trwa trwałe usuwanie tej lokalizacji. Zmiana statusów jest chwilowo zablokowana."
+            : archived
+                ? "Zarchiwizowane wydarzenie jest tylko do odczytu."
+                : "Zmiana dotyczy wyłącznie Twojego postępu w tym wydarzeniu.";
 
         elements.selectedStatus.textContent =
             `${PROGRESS_STATUS[progress.status]?.label || "Nieznaleziona"}${progress.needsCheck ? " · Do sprawdzenia" : ""}`;
@@ -980,11 +1013,11 @@ UUIDs are internal only. No visible location numbering.
             : false;
 
         elements.assignLocation.disabled =
-            !location || !activeEvent || alreadyAssigned || location.isArchived;
+            !location || !activeEvent || alreadyAssigned || location.isArchived || location.isDeletionPending;
 
         elements.removeAssignment.hidden = !isAdmin();
         elements.removeAssignment.disabled =
-            !isAdmin() || !location || !activeEvent || !alreadyAssigned;
+            !isAdmin() || !location || !activeEvent || !alreadyAssigned || location.isDeletionPending;
 
         if (!location || !event) {
             elements.assignLocation.textContent = "Przypisz do eventu";
@@ -1481,6 +1514,10 @@ UUIDs are internal only. No visible location numbering.
         if (progressPanel) progressPanel.hidden = true;
         if (editLocationButton) editLocationButton.hidden = true;
         if (pinLocationButton) pinLocationButton.hidden = true;
+        if (permanentlyDeleteLocationButton) {
+            permanentlyDeleteLocationButton.hidden = true;
+            permanentlyDeleteLocationButton.disabled = true;
+        }
     }
 
     function showLocationDetails(location) {
@@ -1515,8 +1552,8 @@ UUIDs are internal only. No visible location numbering.
                 ? associatedEvents.map(event => event.name).join(", ")
                 : "Brak przypisań";
 
-        elements.deleteSelected.hidden = !isAdmin() || location.isReference || location.isArchived;
-        elements.deleteSelected.disabled = !isAdmin() || location.isReference || location.isArchived;
+        elements.deleteSelected.hidden = !isAdmin() || location.isReference || location.isArchived || location.isDeletionPending;
+        elements.deleteSelected.disabled = !isAdmin() || location.isReference || location.isArchived || location.isDeletionPending;
 
         ensureDetailActionButtons();
 
@@ -1524,11 +1561,24 @@ UUIDs are internal only. No visible location numbering.
         editLocationButton.hidden = !canEdit;
         editLocationButton.disabled = !canEdit;
 
-        pinLocationButton.hidden = !isAdmin() || location.isReference || location.isArchived;
-        pinLocationButton.disabled = !isAdmin() || location.isReference || location.isArchived;
-        pinLocationButton.textContent = location.isPinned
-            ? "Odepnij pinezkę"
-            : "Przypnij pinezkę";
+        const isOwner = location.createdBy === currentUser?.id;
+        const canSeePermanentDelete = !location.isReference && (isAdmin() || isOwner);
+        const canDeleteAsOwner = isOwner && !location.isPinned && !location.isArchived &&
+            (!location.isDeletionPending || location.deletionRequestedBy === currentUser?.id);
+        permanentlyDeleteLocationButton.hidden = !canSeePermanentDelete;
+        permanentlyDeleteLocationButton.disabled = !isAdmin() && !canDeleteAsOwner;
+        permanentlyDeleteLocationButton.title = location.isPinned && !isAdmin()
+            ? "Pinezka została zatwierdzona i przypięta. Może ją odpiąć lub usunąć wyłącznie administrator."
+            : location.isDeletionPending && !isAdmin() && location.deletionRequestedBy !== currentUser?.id
+                ? "Usuwanie tej pinezki rozpoczął administrator. Może je dokończyć wyłącznie administrator."
+                : "Trwale usuwa lokalizację, przypisania do wydarzeń, statusy wszystkich graczy i zdjęcie.";
+
+        const canPinAsOwner = isOwner && !location.isPinned && !location.isArchived;
+        pinLocationButton.hidden = location.isReference || location.isArchived || location.isDeletionPending || (!isAdmin() && !canPinAsOwner);
+        pinLocationButton.disabled = location.isDeletionPending || (!isAdmin() && !canPinAsOwner);
+        pinLocationButton.textContent = isAdmin()
+            ? (location.isPinned ? "Odepnij pinezkę" : "Przypnij pinezkę")
+            : "Zatwierdź i przypnij pinezkę";
 
         if (progressPanel) progressPanel.hidden = Boolean(location.isReference);
         void renderSelectedLocationImage(location.id);
@@ -1539,12 +1589,28 @@ UUIDs are internal only. No visible location numbering.
     }
 
     async function toggleSelectedPin() {
-        if (!isAdmin()) return;
-
         const location = getLocationById(selectedLocationId);
-        if (!location || location.isArchived) return;
+        if (!location || location.isArchived || location.isDeletionPending || location.isReference) return;
+        if (!isAdmin() && (
+            location.createdBy !== currentUser?.id || location.isPinned
+        )) return;
+
+        const accepted = isAdmin()
+            ? window.confirm(
+                `${location.isPinned ? "Odpiąć" : "Przypiąć"} pinezkę „${location.name}”?\n\n` +
+                (location.isPinned
+                    ? "Właściciel ponownie będzie mógł edytować i zarządzać własną lokalizacją."
+                    : "Właściciel straci możliwość edycji i odpięcia tej pinezki. Tylko administrator będzie mógł ją później odblokować.")
+            )
+            : window.confirm(
+                `Czy zatwierdzasz i przypinasz pinezkę „${location.name}”?\n\n` +
+                "Przypięcie oznacza, że sprawdziłeś nazwę, opis i współrzędne. Po zatwierdzeniu nie będziesz mógł już edytować, przesuwać, odpinać ani trwale usunąć tej pinezki. W razie błędu będzie mógł ją odpiąć administrator.\n\n" +
+                "Czy na pewno chcesz ją zatwierdzić?"
+            );
+        if (!accepted) return;
 
         try {
+            pinLocationButton.disabled = true;
             const updated = await dataApi.setLocationPinned(
                 location.id,
                 !location.isPinned
@@ -1556,11 +1622,88 @@ UUIDs are internal only. No visible location numbering.
 
             setEditorStatus(
                 location.isPinned
-                    ? `Przypięto „${location.name}”. Nie można jej teraz przesuwać.`
-                    : `Odpięto „${location.name}”.`
+                    ? (isAdmin()
+                        ? `Przypięto „${location.name}”. Właściciel nie może jej już edytować ani odpiąć.`
+                        : `Zatwierdzono i przypięto „${location.name}”. Od tej chwili tylko administrator może ją edytować lub odpiąć.`)
+                    : `Odpięto „${location.name}”. Właściciel może ponownie edytować pinezkę.`
             );
         } catch (error) {
             setEditorStatus(error.message || "Nie udało się zmienić przypięcia.");
+        } finally {
+            if (pinLocationButton) pinLocationButton.disabled = false;
+        }
+    }
+
+    async function permanentlyDeleteSelectedLocation() {
+        const location = getLocationById(selectedLocationId);
+        if (!location || location.isReference) return;
+
+        const isOwner = location.createdBy === currentUser?.id;
+        if (!isAdmin() && (
+            !isOwner || location.isPinned || location.isArchived ||
+            (location.isDeletionPending && location.deletionRequestedBy !== currentUser?.id)
+        )) return;
+
+        permanentlyDeleteLocationButton.disabled = true;
+        try {
+            const impact = await dataApi.getLocationDeleteImpact(location.id);
+            const events = impact.eventNames.length
+                ? impact.eventNames.map(name => `• ${name}`).join("\n")
+                : "Brak przypisań do wydarzeń.";
+            const message = impact.deletionPending
+                ? `Usuwanie znajdźki „${impact.locationName}” zostało już rozpoczęte, ale nie zostało zakończone.\n\nPonowienie spróbuje dokończyć usuwanie zdjęć i powiązanych danych. Pinezka pozostaje zablokowana dla innych operacji.\n\nCzy kontynuować?`
+                : `Czy na pewno trwale usunąć znajdźkę „${impact.locationName}”?\n\n` +
+                `Przypisania do wydarzeń (${impact.assignmentCount}):\n${events}\n\n` +
+                `Zostanie usuniętych również:\n` +
+                `• Statusy w wydarzeniach wszystkich graczy: ${impact.eventProgressCount}\n` +
+                `• Osobiste statusy w „Wszystkich respach”: ${impact.catalogProgressCount}\n` +
+                `• Zdjęcie i pliki Storage: ${impact.storageObjectCount}\n\n` +
+                `Pinezka jest wspólna dla wszystkich wydarzeń, więc zniknie z każdego z nich.\n` +
+                `To usunięcie jest trwałe i nie można go cofnąć.`;
+
+            if (!window.confirm(message)) return;
+
+            permanentlyDeleteLocationButton.disabled = true;
+            setEditorStatus(`Usuwanie „${location.name}” i wszystkich powiązanych danych…`);
+            const result = await dataApi.deleteLocation(location.id);
+
+            database.locations = database.locations.filter(item => item.id !== location.id);
+            database.eventLocations = database.eventLocations.filter(item => item.locationId !== location.id);
+            database.playerProgress = database.playerProgress.filter(item => item.locationId !== location.id);
+            database.playerCatalogProgress = database.playerCatalogProgress.filter(item => item.locationId !== location.id);
+
+            selectedLocationImage = null;
+            editingLocationHasImage = false;
+            editingLocationCanUploadImage = false;
+            editingLocationId = null;
+            clearPinForm();
+            clearSelectedLocation();
+            renderApplication();
+
+            const removedAssignments = Number(result?.assignments_deleted) || impact.assignmentCount;
+            const removedEventProgress = Number(result?.event_progress_deleted) || impact.eventProgressCount;
+            const removedCatalogProgress = Number(result?.catalog_progress_deleted) || impact.catalogProgressCount;
+            setEditorStatus(
+                `Trwale usunięto „${location.name}”. Usunięto ${removedAssignments} przypisań do wydarzeń, ` +
+                `${removedEventProgress} statusów wydarzeń i ${removedCatalogProgress} statusów katalogowych.`
+            );
+        } catch (error) {
+            console.error("SA Event Maps: Trwałe usuwanie lokalizacji nie powiodło się.", error);
+            if (error?.locationDeletionPending) {
+                location.isDeletionPending = true;
+                location.deletionRequestedBy = currentUser?.id || location.deletionRequestedBy;
+                renderApplication();
+                showLocationDetails(location);
+            }
+            setEditorStatus(error.message || "Nie udało się trwale usunąć znajdźki.");
+        } finally {
+            if (permanentlyDeleteLocationButton) {
+                const current = getLocationById(selectedLocationId);
+                permanentlyDeleteLocationButton.disabled = !current || (!isAdmin() && (
+                    current.isPinned || current.isArchived || current.createdBy !== currentUser?.id ||
+                    (current.isDeletionPending && current.deletionRequestedBy !== currentUser?.id)
+                ));
+            }
         }
     }
 
@@ -1599,13 +1742,13 @@ UUIDs are internal only. No visible location numbering.
     // 14. CREATE AND EDIT LOCATIONS
     // ================================================
 
-    function beginEditSelectedLocation() {
+    async function beginEditSelectedLocation() {
         const location = getLocationById(selectedLocationId);
-
         if (!location || !canEditLocation(location)) return;
 
         editingLocationId = location.id;
-
+        editingLocationHasImage = true; // Fail closed until the slot is checked.
+        editingLocationCanUploadImage = false;
         form.name.value = location.name;
         form.area.value = location.area || "";
         form.x.value = String(location.world.x);
@@ -1616,15 +1759,33 @@ UUIDs are internal only. No visible location numbering.
                 : String(location.world.z);
         form.description.value = location.description || "";
         form.imageFile.value = "";
-        form.imageFileStatus.textContent = "Zdjęcie można dodać podczas tworzenia znajdźki. Po przypięciu pinezki zarządza nim administrator.";
 
         elements.addPin.textContent = "Zapisz zmiany znajdźki";
+        form.imageFileStatus.textContent = "Sprawdzanie, czy znajdźka ma już zdjęcie…";
         updateImageUploadAvailability();
         elements.clearForm.textContent = "Anuluj edycję";
 
+        try {
+            const imageState = await dataApi.getLocationImageUploadState(location.id);
+            if (editingLocationId !== location.id) return;
+            if (imageState.deletionPending) {
+                clearPinForm();
+                setEditorStatus("Ta pinezka jest już w trakcie trwałego usuwania. Nie można jej dalej edytować.");
+                return;
+            }
+            editingLocationHasImage = imageState.hasImage;
+            editingLocationCanUploadImage = imageState.canUpload;
+            imageUploadsEnabled = imageState.playerUploadsEnabled;
+            updateImageUploadAvailability();
+        } catch (error) {
+            editingLocationHasImage = true;
+            editingLocationCanUploadImage = false;
+            updateImageUploadAvailability();
+            setEditorStatus(`Nie udało się sprawdzić dostępności zdjęcia: ${error.message}. Edycja tekstu nadal jest dostępna, ale wysyłanie zdjęcia pozostaje zablokowane.`);
+        }
+
         setEditorStatus(`Edytujesz własną lokalizację „${location.name}”.`);
         form.name.focus();
-
         document.querySelector(".pin-editor")?.scrollIntoView({
             behavior: "smooth",
             block: "nearest"
@@ -1665,18 +1826,18 @@ UUIDs are internal only. No visible location numbering.
 
         let preparedImage = null;
         let imageWarning = "";
-        const selectedImageFile = !editingLocationId ? form.imageFile.files?.[0] : null;
+        const selectedImageFile = form.imageFile.files?.[0] || null;
         try {
             if (selectedImageFile) {
-                const prepared = await prepareImageForNewLocation(selectedImageFile);
+                const prepared = await prepareImageForLocation(selectedImageFile);
                 if (prepared?.blocked) {
-                    imageWarning = " Zdjęcie pominięto, ponieważ administrator zablokował nowe wysyłki. Znajdźka została dodana bez zdjęcia.";
+                    imageWarning = " Zdjęcie pominięto, ponieważ administrator zablokował nowe wysyłki.";
                 } else {
                     preparedImage = prepared;
                 }
             }
         } catch (imageError) {
-            imageWarning = ` Zdjęcie pominięto: ${imageError.message || "nie udało się przygotować obrazu."} Znajdźka zostanie dodana bez zdjęcia.`;
+            imageWarning = ` Zdjęcie pominięto: ${imageError.message || "nie udało się przygotować obrazu."}`;
         }
 
         const pixel = worldToPixel(x, y);
@@ -1703,6 +1864,15 @@ UUIDs are internal only. No visible location numbering.
                 });
 
                 Object.assign(location, updated);
+                if (preparedImage) {
+                    try {
+                        await dataApi.uploadLocationImage(location.id, preparedImage);
+                        editingLocationHasImage = true;
+                        editingLocationCanUploadImage = false;
+                    } catch (imageError) {
+                        imageWarning = ` Zdjęcie nie zostało dodane: ${imageError.message}`;
+                    }
+                }
                 setEditorStatus(`Zapisano zmiany w lokalizacji „${location.name}”.${imageWarning}`);
             } else {
                 const created = await dataApi.createLocation({
@@ -1755,6 +1925,7 @@ UUIDs are internal only. No visible location numbering.
             }
 
             editingLocationId = null;
+            editingLocationHasImage = false;
             clearPinForm();
             renderApplication();
 
@@ -1780,6 +1951,8 @@ UUIDs are internal only. No visible location numbering.
         form.imageFile.value = "";
         form.imageFileStatus.textContent = "Opcjonalnie — jedno zdjęcie na znajdźkę. Zostanie automatycznie zmniejszone do WebP przed wysłaniem.";
         editingLocationId = null;
+        editingLocationHasImage = false;
+        editingLocationCanUploadImage = false;
         elements.addPin.textContent = "Dodaj znajdźkę do katalogu";
         elements.clearForm.textContent = "Wyczyść formularz";
         updateImageUploadAvailability();
@@ -1802,7 +1975,7 @@ UUIDs are internal only. No visible location numbering.
             imageUploadsEnabled = settings.allowPlayerUploads;
             if (!settings.allowPlayerUploads && !currentUser?.isAdmin) {
                 form.imageFile.value = "";
-                fileStatusMessage = "Administrator zablokował nowe wysyłki. Znajdźkę nadal możesz dodać bez zdjęcia.";
+                fileStatusMessage = "Administrator zablokował nowe wysyłki. Możesz zapisać znajdźkę bez zdjęcia.";
             } else {
                 fileStatusMessage = `Wybrano: ${file.name}. Obraz zostanie skompresowany do WebP przed wysłaniem.`;
             }
@@ -2315,69 +2488,30 @@ UUIDs are internal only. No visible location numbering.
         }
     }
 
-    function openHelpWorkspace() {
-        const workspace = byId("help-workspace");
-        const navigationButton = byId("help-nav-button");
-        if (!workspace || !workspace.hidden) return;
-
-        helpWorkspaceScrollPosition = window.scrollY || 0;
-        helpReturnNavigationButton = document.querySelector(".navigation .nav-item.is-active");
-
-        document.querySelectorAll(".navigation .nav-item").forEach(button => {
-            button.classList.remove("is-active");
-        });
-        navigationButton?.classList.add("is-active");
-
-        appShell.hidden = true;
-        workspace.hidden = false;
-        document.body.classList.add("is-help-workspace");
-        window.scrollTo({ top: 0, behavior: "auto" });
-        void loadHelpCenter(true);
-    }
-
-    function closeHelpWorkspace() {
-        const workspace = byId("help-workspace");
-        if (!workspace || workspace.hidden) return;
-
-        workspace.hidden = true;
-        appShell.hidden = false;
-        document.body.classList.remove("is-help-workspace");
-        byId("help-nav-button")?.classList.remove("is-active");
-
-        if (helpReturnNavigationButton?.isConnected) {
-            helpReturnNavigationButton.classList.add("is-active");
-        } else {
-            document.querySelector(".navigation .nav-item")?.classList.add("is-active");
-        }
-        helpReturnNavigationButton = null;
-        window.scrollTo({ top: helpWorkspaceScrollPosition, behavior: "auto" });
-    }
-
     function setupNavigation() {
         const buttons = [
-            ...document.querySelectorAll(".navigation .nav-item:not(#admin-nav-button)")
+            ...document.querySelectorAll(".navigation .nav-item")
         ];
 
         const targets = [
             document.querySelector(".workspace-grid"),
             document.querySelector(".catalog-panel"),
-            document.querySelector(".event-management")
+            document.querySelector(".event-management"),
+            byId("help-center")
         ];
 
         buttons.forEach((button, index) => {
+            const target = targets[index];
+            if (!target) return;
+
             button.addEventListener("click", () => {
-                if (index === 3) {
-                    openHelpWorkspace();
-                    return;
-                }
-
-                const target = targets[index];
-                if (!target) return;
-
                 if (index === 0) {
                     currentFilterId = "all";
                     elements.eventFilter.value = "all";
                     renderApplication();
+                }
+                if (index === 3) {
+                    void loadHelpCenter(true);
                 }
 
                 target.scrollIntoView({
@@ -2390,10 +2524,8 @@ UUIDs are internal only. No visible location numbering.
             });
         });
 
-        byId("help-back-to-map")?.addEventListener("click", closeHelpWorkspace);
-
         document.querySelectorAll("[data-help-document-tab]").forEach(button => {
-            if (button.closest("#admin-workspace")) return;
+            if (button.closest(".admin-workspace")) return;
             button.addEventListener("click", () => {
                 activeHelpDocumentType = button.dataset.helpDocumentTab;
                 document.querySelectorAll("#help-center [data-help-document-tab]").forEach(tab => {
@@ -2547,9 +2679,6 @@ UUIDs are internal only. No visible location numbering.
     }
 
     function clearCloudState() {
-        if (!byId("help-workspace")?.hidden) {
-            closeHelpWorkspace();
-        }
         currentUser = null;
         dataReady = false;
         imageUploadsEnabled = false;

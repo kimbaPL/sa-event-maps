@@ -1926,8 +1926,8 @@ functions or the admin-only data layer. This module owns only UI.
             const title = document.createElement("h3");
             title.textContent = location.name;
             const state = document.createElement("span");
-            state.className = `admin-status-pill ${location.isArchived ? "is-archived" : location.isPinned ? "is-pinned" : "is-active"}`;
-            state.textContent = location.isArchived ? "Zarchiwizowana" : location.isPinned ? "Zablokowana" : "Aktywna";
+            state.className = `admin-status-pill ${location.isDeletionPending ? "is-pending" : location.isArchived ? "is-archived" : location.isPinned ? "is-pinned" : "is-active"}`;
+            state.textContent = location.isDeletionPending ? "Usuwanie w toku" : location.isArchived ? "Zarchiwizowana" : location.isPinned ? "Zablokowana" : "Aktywna";
             heading.append(title, state);
             const description = document.createElement("p");
             description.className = "admin-record-description";
@@ -1945,14 +1945,14 @@ functions or the admin-only data layer. This module owns only UI.
             main.append(heading, description, meta);
             const actions = document.createElement("div");
             actions.className = "admin-record-actions";
-            actions.appendChild(makeActionButton("Edytuj", "edit", location.id, "locationAction"));
-            if (!location.isArchived) {
+            actions.appendChild(makeActionButton("Edytuj", "edit", location.id, "locationAction", false, location.isDeletionPending));
+            if (!location.isDeletionPending && !location.isArchived) {
                 actions.appendChild(makeActionButton(location.isPinned ? "Odblokuj" : "Zablokuj", location.isPinned ? "unpin" : "pin", location.id, "locationAction"));
                 actions.appendChild(makeActionButton("Archiwizuj", "archive", location.id, "locationAction"));
-            } else {
+            } else if (!location.isDeletionPending) {
                 actions.appendChild(makeActionButton("Przywróć", "restore", location.id, "locationAction"));
             }
-            actions.appendChild(makeActionButton("Usuń na stałe", "delete", location.id, "locationAction", true, assignmentCount > 0));
+            actions.appendChild(makeActionButton(location.isDeletionPending ? "Dokończ usuwanie" : "Usuń na stałe", "delete", location.id, "locationAction", true));
             card.append(main, actions);
             locationsList.appendChild(card);
         }
@@ -2068,7 +2068,13 @@ functions or the admin-only data layer. This module owns only UI.
         } else if (action === "restore") {
             accepted = window.confirm(`Przywrócić wydarzenie „${event.name}”?\n\nWydarzenie wróci ze statusem sprzed archiwizacji.`);
         } else if (action === "delete") {
-            accepted = window.confirm(`Trwale usunąć wydarzenie „${event.name}”?\n\nPrzypisania znajdziek do tego wydarzenia zostaną usunięte, ale same pinezki pozostaną w katalogu. Jeżeli istnieje choć jeden zapis postępu gracza, baza zablokuje usunięcie. Tej operacji nie można cofnąć.`);
+            const assignedCount = assignmentCountForEvent(event.id);
+            accepted = window.confirm(
+                `Trwale usunąć wydarzenie „${event.name}”?\n\n` +
+                `Usunięte zostaną przypisania ${assignedCount} znajdziek oraz wszystkie osobiste statusy graczy zapisane dla tego wydarzenia.\n\n` +
+                "Globalne pinezki, ich zdjęcia oraz osobiste postępy w „Wszystkich respach” pozostaną bez zmian.\n\n" +
+                "Tej operacji nie można cofnąć."
+            );
         } else return;
         if (!accepted) return;
 
@@ -2242,7 +2248,26 @@ functions or the admin-only data layer. This module owns only UI.
         } else if (action === "restore") {
             accepted = window.confirm(`Przywrócić lokalizację „${location.name}”?\n\nPinezka ponownie będzie dostępna w przypisanych wydarzeniach.`);
         } else if (action === "delete") {
-            accepted = window.confirm(`Trwale usunąć znajdźkę „${location.name}”?\n\nBaza pozwoli na to wyłącznie wtedy, gdy lokalizacja nie jest przypisana do żadnego wydarzenia, nie ma zapisanych postępów graczy i nie ma zdjęcia. Jeśli ma zdjęcie, usuń je najpierw z panelu szczegółów znajdźki. Tej operacji nie można cofnąć.`);
+            if (location.isDeletionPending) {
+                accepted = window.confirm(
+                    `Usuwanie znajdźki „${location.name}” zostało już rozpoczęte, ale nie zostało zakończone.\n\n` +
+                    "Pinezka pozostaje zabezpieczona przed edycją i zmianą postępów. Ponowienie spróbuje dokończyć usuwanie zdjęć oraz powiązanych danych.\n\nCzy kontynuować?"
+                );
+            } else {
+                const assignedEvents = eventLocations
+                    .filter(item => item.locationId === location.id)
+                    .map(item => events.find(event => event.id === item.eventId)?.name)
+                    .filter(Boolean);
+                const eventList = assignedEvents.length
+                    ? assignedEvents.map(name => `• ${name}`).join("\n")
+                    : "Brak przypisań do wydarzeń.";
+                accepted = window.confirm(
+                    `Trwale usunąć znajdźkę „${location.name}”?\n\n` +
+                    `Pinezka zniknie ze wszystkich wydarzeń (${assignedEvents.length}):\n${eventList}\n\n` +
+                    "Zostaną również usunięte wszystkie statusy wszystkich graczy w wydarzeniach i w „Wszystkich respach”, zdjęcie oraz jego plik z prywatnego Storage.\n\n" +
+                    "Tej operacji nie można cofnąć. Jeśli chcesz tylko ukryć lokalizację, użyj archiwizacji."
+                );
+            }
         } else return;
         if (!accepted) return;
 
@@ -2260,6 +2285,7 @@ functions or the admin-only data layer. This module owns only UI.
             setLocationStatus(`${labels[action]} znajdźkę „${location.name}”.`, "success");
         } catch (error) {
             console.error("SA Event Maps: Operacja na lokalizacji nie powiodła się.", error);
+            if (error?.locationDeletionPending) await refreshManagementData();
             setLocationStatus(error.message || "Nie udało się wykonać operacji na lokalizacji.", "error");
         } finally {
             locationsList.querySelectorAll("button").forEach(button => button.disabled = false);
