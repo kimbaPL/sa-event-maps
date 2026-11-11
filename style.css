@@ -2327,6 +2327,25 @@ textarea {
     filter: grayscale(0.8);
 }
 
+.sa-reference-marker {
+    background: transparent !important;
+    border: 0 !important;
+}
+
+.sa-reference-marker-core {
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    border: 3px solid #eafff5;
+    border-radius: 50%;
+    background: #65d6a3;
+    color: #07131d;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.42);
+    font-size: 9px;
+    font-weight: 900;
+}
+
 .progress-editor {
     margin: 0 20px 17px;
     padding: 15px;
@@ -4983,3 +5002,169 @@ body.is-help-workspace {
         width: min(150px, 38vw);
     }
 }
+
+
+/* =========================================
+   INVITATION-ONLY ACCESS FLOW
+   ========================================= */
+
+.auth-extra-view[hidden] {
+    display: none !important;
+}
+
+.auth-extra-view {
+    margin-top: 12px;
+}
+
+.auth-extra-heading {
+    margin: 10px 0 20px;
+}
+
+.auth-extra-heading h2 {
+    margin: 0 0 8px;
+    color: var(--text);
+    font-size: 19px;
+}
+
+.auth-extra-heading p {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.65;
+}
+
+#auth-request-submit:disabled,
+#auth-invite-submit:disabled {
+    opacity: 0.65;
+    cursor: wait;
+}
+
+.admin-access-requests {
+    margin: 0 0 30px;
+    padding: 18px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+}
+
+.admin-access-requests-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.admin-access-requests-heading h3 {
+    margin: 0 0 5px;
+    font-size: 15px;
+}
+
+.admin-access-requests-heading p {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1.5;
+}
+
+.admin-access-request-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 30px;
+    height: 30px;
+    padding: 0 9px;
+    border: 1px solid rgba(101, 214, 163, 0.28);
+    border-radius: 999px;
+    background: rgba(101, 214, 163, 0.08);
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.admin-access-requests-table-wrap {
+    width: 100%;
+    overflow-x: auto;
+}
+
+.admin-access-requests-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 620px;
+}
+
+.admin-access-requests-table th,
+.admin-access-requests-table td {
+    padding: 11px 10px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    font-size: 11px;
+}
+
+.admin-access-requests-table th {
+    color: var(--text-muted);
+    font-size: 9px;
+    letter-spacing: .06em;
+}
+
+.admin-access-request-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.admin-access-request-actions button,
+.admin-user-delete-button {
+    padding: 7px 9px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface-light);
+    color: var(--text);
+    font-size: 10px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.admin-access-request-actions button[data-action="approve-request"] {
+    border-color: rgba(101, 214, 163, .32);
+    color: var(--accent);
+}
+
+.admin-access-request-actions button[data-action="delete-request"],
+.admin-user-delete-button {
+    border-color: rgba(237, 119, 119, .28);
+    color: var(--danger);
+}
+
+.admin-access-request-actions button:disabled,
+.admin-user-delete-button:disabled {
+    opacity: .45;
+    cursor: not-allowed;
+}
+
+.admin-user-action-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+}
+
+.admin-user-delete-button {
+    white-space: nowrap;
+}
+
+.admin-access-requests-status {
+    margin-top: 10px;
+    color: var(--text-muted);
+    font-size: 11px;
+}
+
+.admin-access-requests-status[data-state="error"] {
+    color: var(--danger);
+}
+
+.admin-access-requests-status[data-state="success"] {
+    color: var(--accent);
+}
+
+.auth-mode-switch[hidden] { display: none !important; }

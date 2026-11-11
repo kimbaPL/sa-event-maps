@@ -28,6 +28,9 @@ functions or the admin-only data layer. This module owns only UI.
     const usersCount = byId("admin-users-count");
     const statusElement = byId("admin-panel-status");
     const tableBody = byId("admin-users-table-body");
+    const accessRequestsCount = byId("admin-access-requests-count");
+    const accessRequestsTableBody = byId("admin-access-requests-table-body");
+    const accessRequestsStatus = byId("admin-access-requests-status");
 
     const addCategoryButton = byId("admin-add-category");
     const categoryFormCard = byId("admin-category-form-card");
@@ -143,6 +146,9 @@ functions or the admin-only data layer. This module owns only UI.
         usersCount,
         statusElement,
         tableBody,
+        accessRequestsCount,
+        accessRequestsTableBody,
+        accessRequestsStatus,
         addCategoryButton,
         categoryFormCard,
         categoryForm,
@@ -240,6 +246,217 @@ functions or the admin-only data layer. This module owns only UI.
         ...helpDocumentTabs
     ];
 
+    function initializeInvitationAccessUI() {
+        const authScreen = byId("auth-screen");
+        const authForm = byId("auth-form");
+        const modeSwitch = byId("auth-mode-switch");
+        const forgotButton = byId("auth-forgot-password");
+        const requestButton = byId("auth-request-access-button");
+        const requestView = byId("auth-access-request");
+        const requestForm = byId("auth-access-request-form");
+        const requestName = byId("auth-request-display-name");
+        const requestEmail = byId("auth-request-email");
+        const requestSubmit = byId("auth-request-submit");
+        const requestBack = byId("auth-access-request-back");
+        const requestStatus = byId("auth-access-request-status");
+        const inviteView = byId("auth-invite-setup");
+        const inviteForm = byId("auth-invite-setup-form");
+        const invitePassword = byId("auth-invite-password");
+        const invitePasswordConfirm = byId("auth-invite-password-confirm");
+        const inviteSubmit = byId("auth-invite-submit");
+        const inviteStatus = byId("auth-invite-status");
+        const authStatus = byId("auth-status");
+        const authBackButton = byId("auth-back-button");
+
+        if (!authScreen || !authForm || !requestButton || !requestView || !requestForm ||
+            !requestName || !requestEmail || !requestSubmit || !requestBack || !requestStatus ||
+            !inviteView || !inviteForm || !invitePassword || !invitePasswordConfirm ||
+            !inviteSubmit || !inviteStatus || !supabase) {
+            console.error("SA Event Maps: Brakuje elementów formularza zaproszeń.");
+            return;
+        }
+
+        const setStatus = (element, message, type = "info") => {
+            element.textContent = String(message || "");
+            element.classList.toggle("is-error", type === "error");
+            element.classList.toggle("is-success", type === "success");
+        };
+
+        const showLoginView = () => {
+            authScreen.hidden = false;
+            modeSwitch?.setAttribute("hidden", "");
+            authForm.hidden = false;
+            requestView.hidden = true;
+            inviteView.hidden = true;
+            requestButton.hidden = false;
+            if (forgotButton) forgotButton.hidden = false;
+            if (authBackButton) authBackButton.hidden = true;
+        };
+
+        const showRequestView = () => {
+            authScreen.hidden = false;
+            modeSwitch?.setAttribute("hidden", "");
+            authForm.hidden = true;
+            requestView.hidden = false;
+            inviteView.hidden = true;
+            requestButton.hidden = true;
+            if (forgotButton) forgotButton.hidden = true;
+            if (authBackButton) authBackButton.hidden = true;
+            setStatus(requestStatus, "", "info");
+            requestName.focus();
+        };
+
+        const showInviteView = () => {
+            authScreen.hidden = false;
+            modeSwitch?.setAttribute("hidden", "");
+            authForm.hidden = true;
+            requestView.hidden = true;
+            inviteView.hidden = false;
+            requestButton.hidden = true;
+            if (forgotButton) forgotButton.hidden = true;
+            if (authBackButton) authBackButton.hidden = true;
+        };
+
+        // The public signup switch is intentionally unavailable. New accounts
+        // can only be created by the server after an administrator sends an invite.
+        modeSwitch?.setAttribute("hidden", "");
+        requestButton.addEventListener("click", showRequestView);
+        requestBack.addEventListener("click", showLoginView);
+
+        requestForm.addEventListener("submit", async event => {
+            event.preventDefault();
+            const displayName = String(requestName.value || "").trim();
+            const email = String(requestEmail.value || "").trim().toLowerCase();
+
+            if (displayName.length < 2 || displayName.length > 80) {
+                setStatus(requestStatus, "Pseudonim musi mieć od 2 do 80 znaków.", "error");
+                return;
+            }
+            if (!requestEmail.checkValidity()) {
+                setStatus(requestStatus, "Podaj prawidłowy adres e-mail.", "error");
+                return;
+            }
+
+            requestSubmit.disabled = true;
+            requestSubmit.textContent = "Wysyłanie...";
+            setStatus(requestStatus, "Wysyłanie prośby do administracji...", "info");
+
+            try {
+                const { error } = await supabase.rpc("submit_access_request", {
+                    p_display_name: displayName,
+                    p_email: email
+                });
+                if (error) throw error;
+
+                requestForm.reset();
+                setStatus(
+                    requestStatus,
+                    "Prośba została wysłana. Jeśli administracja ją zatwierdzi, otrzymasz zaproszenie na podany adres e-mail.",
+                    "success"
+                );
+            } catch (error) {
+                console.error("SA Event Maps: Nie udało się wysłać prośby o dostęp.", error);
+                setStatus(requestStatus, error.message || "Nie udało się wysłać prośby. Spróbuj ponownie później.", "error");
+            } finally {
+                requestSubmit.disabled = false;
+                requestSubmit.textContent = "Wyślij prośbę";
+            }
+        });
+
+        const url = new URL(window.location.href);
+        const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+        const queryType = url.searchParams.get("type");
+        const isInviteLink = url.searchParams.get("invite") === "1" || queryType === "invite" || hashParams.get("type") === "invite";
+        let invitationMode = isInviteLink;
+
+        const finishInvite = async session => {
+            if (!invitationMode || !session) return;
+            showInviteView();
+            setStatus(inviteStatus, "Zaproszenie potwierdzone. Ustaw teraz hasło do konta.", "success");
+        };
+
+        supabase.auth.onAuthStateChange((event, session) => {
+            if (invitationMode && session && ["SIGNED_IN", "INITIAL_SESSION", "TOKEN_REFRESHED"].includes(event)) {
+                // auth.js may normally dismiss the login screen after SIGNED_IN;
+                // keep this dedicated password setup screen visible until complete.
+                void finishInvite(session);
+            }
+        });
+
+        if (isInviteLink) {
+            showInviteView();
+            (async () => {
+                try {
+                    const tokenHash = url.searchParams.get("token_hash");
+                    if (tokenHash && (queryType === "invite" || !queryType)) {
+                        const { error: verifyError } = await supabase.auth.verifyOtp({
+                            token_hash: tokenHash,
+                            type: "invite"
+                        });
+                        if (verifyError) throw verifyError;
+                    }
+
+                    const { data, error } = await supabase.auth.getSession();
+                    if (error) throw error;
+                    if (data?.session) {
+                        await finishInvite(data.session);
+                    } else {
+                        setStatus(
+                            inviteStatus,
+                            "Nie udało się potwierdzić sesji z zaproszenia. Link mógł wygasnąć. Poproś administrację o ponowne wysłanie zaproszenia.",
+                            "error"
+                        );
+                    }
+                } catch (error) {
+                    console.error("SA Event Maps: Nie udało się rozpocząć aktywacji zaproszenia.", error);
+                    setStatus(inviteStatus, error.message || "Link zaproszenia jest nieprawidłowy lub wygasł.", "error");
+                }
+            })();
+        }
+
+        inviteForm.addEventListener("submit", async event => {
+            event.preventDefault();
+            const password = invitePassword.value;
+            const confirmation = invitePasswordConfirm.value;
+
+            if (password.length < 8) {
+                setStatus(inviteStatus, "Hasło musi mieć co najmniej 8 znaków.", "error");
+                return;
+            }
+            if (password !== confirmation) {
+                setStatus(inviteStatus, "Podane hasła nie są identyczne.", "error");
+                return;
+            }
+
+            inviteSubmit.disabled = true;
+            inviteSubmit.textContent = "Zapisywanie...";
+            try {
+                const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+                if (sessionError) throw sessionError;
+                if (!sessionData?.session) throw new Error("Sesja zaproszenia wygasła. Poproś administrację o ponowne wysłanie zaproszenia.");
+
+                const { error } = await supabase.auth.updateUser({ password });
+                if (error) throw error;
+
+                setStatus(inviteStatus, "Hasło zostało ustawione. Otwieranie mapy...", "success");
+                invitationMode = false;
+                url.searchParams.delete("invite");
+                url.searchParams.delete("type");
+                url.searchParams.delete("token_hash");
+                window.history.replaceState({}, document.title, `${url.pathname}${url.search}`);
+                window.location.reload();
+            } catch (error) {
+                console.error("SA Event Maps: Nie udało się ustawić hasła zaproszonego konta.", error);
+                setStatus(inviteStatus, error.message || "Nie udało się ustawić hasła.", "error");
+            } finally {
+                inviteSubmit.disabled = false;
+                inviteSubmit.textContent = "Ustaw hasło i aktywuj konto";
+            }
+        });
+    }
+
+    initializeInvitationAccessUI();
+
     if (requiredElements.some(element => !element)) {
         console.error("SA Event Maps: Brakuje elementów pełnoekranowego panelu administracyjnego.");
         return;
@@ -247,6 +464,7 @@ functions or the admin-only data layer. This module owns only UI.
 
     let currentUser = null;
     let users = [];
+    let accessRequests = [];
     let categories = [];
     let isLoadingUsers = false;
     let isLoadingCategories = false;
@@ -757,7 +975,7 @@ functions or the admin-only data layer. This module owns only UI.
             blockPlayerImageUploadsToggle.checked = !settings.allowPlayerUploads;
             setImageSettingsStatus(
                 settings.allowPlayerUploads
-                    ? "Gracze mogą dodawać po jednym zdjęciu do własnych nieprzypiętych znajdziek."
+                    ? "Gracze mogą dodawać po jednym zdjęciu do nowych lub własnych nieprzypiętych znajdziek."
                     : "Dodawanie nowych zdjęć przez graczy jest zablokowane. Istniejące zdjęcia pozostają widoczne.",
                 "success"
             );
@@ -1135,6 +1353,186 @@ functions or the admin-only data layer. This module owns only UI.
         return cell;
     }
 
+    async function getFunctionErrorMessage(error) {
+        const context = error?.context;
+        if (context && typeof context.clone === "function") {
+            try {
+                const payload = await context.clone().json();
+                if (payload?.error) return String(payload.error);
+            } catch (_) {
+                // Fall back to the SDK error message when the response is not JSON.
+            }
+        }
+        return error?.message || "Nie udało się wykonać operacji.";
+    }
+
+    function setAccessRequestsStatus(message, type = "info") {
+        accessRequestsStatus.textContent = String(message || "");
+        accessRequestsStatus.dataset.state = type;
+    }
+
+    function renderAccessRequests() {
+        accessRequestsCount.textContent = String(accessRequests.length);
+        accessRequestsTableBody.replaceChildren();
+
+        if (accessRequests.length === 0) {
+            const row = document.createElement("tr");
+            const cell = createCell("admin-table-empty");
+            cell.colSpan = 4;
+            cell.textContent = "Brak oczekujących próśb o dostęp.";
+            row.appendChild(cell);
+            accessRequestsTableBody.appendChild(row);
+            return;
+        }
+
+        for (const request of accessRequests) {
+            const row = document.createElement("tr");
+            row.dataset.requestId = request.request_id;
+
+            const nameCell = createCell("admin-user-name-cell");
+            const name = document.createElement("strong");
+            name.textContent = request.display_name || "(brak pseudonimu)";
+            nameCell.appendChild(name);
+
+            const emailCell = createCell("admin-user-email-cell");
+            emailCell.textContent = request.email || "(brak adresu e-mail)";
+
+            const dateCell = createCell("admin-date-cell");
+            dateCell.textContent = formatDate(request.created_at);
+
+            const actionCell = createCell("admin-user-action-cell");
+            const actions = document.createElement("div");
+            actions.className = "admin-access-request-actions";
+
+            const approveButton = document.createElement("button");
+            approveButton.type = "button";
+            approveButton.dataset.action = "approve-request";
+            approveButton.dataset.requestId = request.request_id;
+            approveButton.textContent = "Wyślij zaproszenie";
+
+            const deleteButton = document.createElement("button");
+            deleteButton.type = "button";
+            deleteButton.dataset.action = "delete-request";
+            deleteButton.dataset.requestId = request.request_id;
+            deleteButton.textContent = "Usuń zgłoszenie";
+
+            actions.append(approveButton, deleteButton);
+            actionCell.appendChild(actions);
+            row.append(nameCell, emailCell, dateCell, actionCell);
+            accessRequestsTableBody.appendChild(row);
+        }
+    }
+
+    async function handleAccessRequestAction(action, requestId) {
+        const request = accessRequests.find(item => item.request_id === requestId);
+        if (!request) {
+            setAccessRequestsStatus("Nie znaleziono zgłoszenia. Odśwież listę.", "error");
+            return;
+        }
+
+        if (action === "approve-request") {
+            const confirmed = window.confirm(
+                `Wysłać zaproszenie do ${request.display_name || "tej osoby"} na adres ${request.email}? Konto zostanie utworzone przez Supabase, a osoba otrzyma wiadomość z linkiem do ustawienia hasła.`
+            );
+            if (!confirmed) return;
+        } else if (action === "delete-request") {
+            const confirmed = window.confirm(
+                `Usunąć prośbę o dostęp od ${request.display_name || request.email}? Nie zostanie utworzone żadne konto.`
+            );
+            if (!confirmed) return;
+        } else {
+            return;
+        }
+
+        const buttons = accessRequestsTableBody.querySelectorAll(`button[data-request-id="${CSS.escape(requestId)}"]`);
+        buttons.forEach(button => button.disabled = true);
+        setAccessRequestsStatus(
+            action === "approve-request" ? "Wysyłanie zaproszenia..." : "Usuwanie zgłoszenia...",
+            "loading"
+        );
+
+        try {
+            await getFreshAdminContext();
+            const { data, error } = await supabase.functions.invoke("manage-access", {
+                body: { action, requestId }
+            });
+            if (error) {
+                const detail = data?.error || await getFunctionErrorMessage(error);
+                throw new Error(detail || "Nie udało się wykonać operacji.");
+            }
+            if (data?.error) throw new Error(data.error);
+
+            const refreshed = await loadUsers();
+            if (!refreshed) throw new Error("Operacja została wykonana, ale nie udało się odświeżyć listy.");
+
+            if (action === "approve-request") {
+                setAccessRequestsStatus(
+                    data?.warning || `Wysłano zaproszenie na adres ${request.email}.`,
+                    data?.warning ? "error" : "success"
+                );
+            } else {
+                setAccessRequestsStatus(`Usunięto zgłoszenie od ${request.display_name || request.email}.`, "success");
+            }
+        } catch (error) {
+            console.error("SA Event Maps: Operacja na prośbie o dostęp nie powiodła się.", error);
+            setAccessRequestsStatus(error.message || "Nie udało się wykonać operacji.", "error");
+        } finally {
+            accessRequestsTableBody.querySelectorAll("button").forEach(button => button.disabled = false);
+        }
+    }
+
+    async function deleteUserAccount(userId) {
+        const target = users.find(user => user.user_id === userId);
+        if (!target) {
+            setStatus("Nie znaleziono użytkownika na aktualnej liście. Odśwież ją.", "error");
+            return;
+        }
+        if (target.is_owner) {
+            setStatus("Nie można usunąć stałego właściciela projektu.", "error");
+            return;
+        }
+        if (currentUser?.id === userId) {
+            setStatus("Nie możesz usunąć własnego konta. Poproś innego administratora.", "error");
+            return;
+        }
+
+        const displayName = target.display_name || target.email || "wybranego użytkownika";
+        const confirmed = window.confirm(
+            `Czy na pewno usunąć konto użytkownika ${displayName}?
+
+Konto i możliwość logowania zostaną usunięte. Wspólne znajdźki, przypisania do wydarzeń, opisy i zdjęcia pozostaną. Usunięte zostaną wyłącznie osobiste postępy tej osoby. Tej operacji nie można cofnąć.`
+        );
+        if (!confirmed) return;
+
+        const row = tableBody.querySelector(`tr[data-user-id="${CSS.escape(userId)}"]`);
+        row?.querySelectorAll("button").forEach(button => button.disabled = true);
+        setStatus(`Zabezpieczanie zdjęć i usuwanie konta ${displayName}...`, "loading");
+
+        try {
+            await getFreshAdminContext();
+            const { data, error } = await supabase.functions.invoke("manage-access", {
+                body: { action: "delete_user", userId }
+            });
+            if (error) {
+                const detail = data?.error || await getFunctionErrorMessage(error);
+                throw new Error(detail || "Nie udało się usunąć konta.");
+            }
+            if (data?.error) throw new Error(data.error);
+
+            const refreshed = await loadUsers();
+            if (!refreshed) throw new Error("Konto zostało usunięte, ale nie udało się odświeżyć listy użytkowników.");
+            setStatus(
+                `Usunięto konto ${displayName}. Zachowano wszystkie wspólne dane i ${Number(data?.transferredImages || 0)} zdjęć.`,
+                "success"
+            );
+        } catch (error) {
+            console.error("SA Event Maps: Nie udało się usunąć konta użytkownika.", error);
+            setStatus(error.message || "Nie udało się usunąć konta użytkownika.", "error");
+        } finally {
+            tableBody.querySelectorAll("button").forEach(button => button.disabled = false);
+        }
+    }
+
     function renderUsers() {
         const query = searchInput.value.trim().toLocaleLowerCase("pl-PL");
         const filteredUsers = users.filter(user => {
@@ -1218,6 +1616,9 @@ functions or the admin-only data layer. This module owns only UI.
             lastLoginCell.textContent = formatDate(user.last_sign_in_at);
 
             const actionCell = createCell("admin-action-cell");
+            const actionStack = document.createElement("div");
+            actionStack.className = "admin-user-action-stack";
+
             const actionButton = document.createElement("button");
             actionButton.type = "button";
             actionButton.className = user.role === "admin"
@@ -1245,7 +1646,25 @@ functions or the admin-only data layer. This module owns only UI.
                     : "Nadaj administratora";
             }
 
-            actionCell.appendChild(actionButton);
+            const deleteButton = document.createElement("button");
+            deleteButton.type = "button";
+            deleteButton.className = "admin-user-delete-button";
+            deleteButton.dataset.action = "delete-user";
+            deleteButton.dataset.userId = user.user_id;
+            deleteButton.textContent = "Usuń konto";
+            if (user.is_owner) {
+                deleteButton.disabled = true;
+                deleteButton.title = "Stałego właściciela projektu nie można usunąć.";
+            } else if (currentUser?.id === user.user_id) {
+                deleteButton.disabled = true;
+                deleteButton.title = "Nie możesz usunąć własnego konta.";
+            } else if (user.role === "admin" && adminCount <= 1) {
+                deleteButton.disabled = true;
+                deleteButton.title = "Nie można usunąć ostatniego administratora.";
+            }
+
+            actionStack.append(actionButton, deleteButton);
+            actionCell.appendChild(actionStack);
             row.append(nameCell, emailCell, roleCell, createdCell, lastLoginCell, actionCell);
             tableBody.appendChild(row);
         }
@@ -1261,12 +1680,24 @@ functions or the admin-only data layer. This module owns only UI.
 
         try {
             await getFreshAdminContext();
-            const { data, error } = await supabase.rpc("admin_list_users");
-            if (error) throw error;
+            const [usersResult, requestsResult] = await Promise.all([
+                supabase.rpc("admin_list_users"),
+                supabase.rpc("admin_list_access_requests")
+            ]);
+            if (usersResult.error) throw usersResult.error;
+            if (requestsResult.error) throw requestsResult.error;
 
-            users = Array.isArray(data) ? data : [];
+            users = Array.isArray(usersResult.data) ? usersResult.data : [];
+            accessRequests = Array.isArray(requestsResult.data) ? requestsResult.data : [];
             hasLoadedUsers = true;
             renderUsers();
+            renderAccessRequests();
+            setAccessRequestsStatus(
+                accessRequests.length
+                    ? `Oczekuje ${accessRequests.length} próśb o dostęp.`
+                    : "Nie ma oczekujących próśb o dostęp.",
+                "info"
+            );
 
             const adminCount = users.filter(user => user.role === "admin").length;
             setStatus(
@@ -1887,7 +2318,7 @@ functions or the admin-only data layer. This module owns only UI.
         locationImageFileInput.disabled = Boolean(location);
         locationImageFileStatus.textContent = location
             ? "Sprawdzanie, czy znajdźka ma już zdjęcie…"
-            : "Zdjęcia są całkowicie opcjonalne. Zostanie automatycznie skompresowane do WebP.";
+            : "Opcjonalnie — jedno zdjęcie na znajdźkę. Zostanie automatycznie skompresowane do WebP.";
         locationReturnEventId = location ? null : assignToEventId;
         locationFormTitle.textContent = location
             ? "Edytuj znajdźkę"
@@ -2316,9 +2747,19 @@ functions or the admin-only data layer. This module owns only UI.
     });
     searchInput.addEventListener("input", renderUsers);
     tableBody.addEventListener("click", event => {
-        const button = event.target.closest('button[data-action="change-role"]');
+        const button = event.target.closest("button[data-action]");
         if (!button || button.disabled) return;
-        void changeUserRole(button.dataset.userId, button.dataset.nextRole);
+        if (button.dataset.action === "change-role") {
+            void changeUserRole(button.dataset.userId, button.dataset.nextRole);
+        } else if (button.dataset.action === "delete-user") {
+            void deleteUserAccount(button.dataset.userId);
+        }
+    });
+
+    accessRequestsTableBody.addEventListener("click", event => {
+        const button = event.target.closest("button[data-action]");
+        if (!button || button.disabled) return;
+        void handleAccessRequestAction(button.dataset.action, button.dataset.requestId);
     });
 
     addCategoryButton.addEventListener("click", () => showCategoryForm());
@@ -2377,7 +2818,7 @@ functions or the admin-only data layer. This module owns only UI.
         const file = locationImageFileInput.files?.[0];
         locationImageFileStatus.textContent = file
             ? `Wybrano: ${file.name}. Zostanie skompresowane przed wysłaniem.`
-            : "Opcjonalne zdjęcie. Zostanie automatycznie skompresowane do WebP.";
+            : "Opcjonalnie — jedno zdjęcie na znajdźkę. Zostanie automatycznie skompresowane do WebP.";
     });
     locationSearchInput.addEventListener("input", renderLocations);
     locationFilter.addEventListener("change", renderLocations);

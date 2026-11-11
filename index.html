@@ -75,11 +75,11 @@
 
             <h1>Witaj w SA Event Maps</h1>
 
-            <p>Zaloguj się lub utwórz nowe konto.</p>
+            <p>Zaloguj się. Dostęp do mapy przyznaje administracja organizacji.</p>
 
         </div>
 
-        <div id="auth-mode-switch" class="auth-mode-switch">
+        <div id="auth-mode-switch" class="auth-mode-switch" hidden>
 
             <button
                 type="button"
@@ -174,6 +174,53 @@
             </button>
 
         </form>
+
+        <button
+            id="auth-request-access-button"
+            class="auth-text-button"
+            type="button"
+        >
+            Nie masz konta? Poproś o dostęp
+        </button>
+
+        <section id="auth-access-request" class="auth-extra-view" hidden>
+            <div class="auth-extra-heading">
+                <h2>Prośba o dostęp do mapy</h2>
+                <p>Podaj pseudonim i adres e-mail. Administracja sprawdzi zgłoszenie. Konto powstanie dopiero po wysłaniu zaproszenia.</p>
+            </div>
+            <form id="auth-access-request-form">
+                <div class="form-field">
+                    <label for="auth-request-display-name">Pseudonim</label>
+                    <input id="auth-request-display-name" type="text" minlength="2" maxlength="80" autocomplete="nickname" required placeholder="Twój pseudonim">
+                </div>
+                <div class="form-field">
+                    <label for="auth-request-email">Adres e-mail</label>
+                    <input id="auth-request-email" type="email" maxlength="254" autocomplete="email" required placeholder="twoj@email.com">
+                </div>
+                <button id="auth-request-submit" class="add-pin-button" type="submit">Wyślij prośbę</button>
+            </form>
+            <div id="auth-access-request-status" class="auth-status" role="status" aria-live="polite"></div>
+            <button id="auth-access-request-back" class="auth-text-button" type="button">Wróć do logowania</button>
+        </section>
+
+        <section id="auth-invite-setup" class="auth-extra-view" hidden>
+            <div class="auth-extra-heading">
+                <h2>Aktywacja konta</h2>
+                <p>Zaproszenie zostało zaakceptowane. Ustaw hasło, aby zakończyć tworzenie konta.</p>
+            </div>
+            <form id="auth-invite-setup-form">
+                <div class="form-field">
+                    <label for="auth-invite-password">Nowe hasło</label>
+                    <input id="auth-invite-password" type="password" minlength="8" autocomplete="new-password" required placeholder="Minimum 8 znaków">
+                </div>
+                <div class="form-field">
+                    <label for="auth-invite-password-confirm">Powtórz hasło</label>
+                    <input id="auth-invite-password-confirm" type="password" minlength="8" autocomplete="new-password" required placeholder="Powtórz hasło">
+                </div>
+                <button id="auth-invite-submit" class="add-pin-button" type="submit">Ustaw hasło i aktywuj konto</button>
+            </form>
+            <div id="auth-invite-status" class="auth-status" role="status" aria-live="polite"></div>
+        </section>
 
         <button
             id="auth-forgot-password"
@@ -563,10 +610,10 @@
                         type="number"
                         min="0"
                         step="1"
-                        placeholder="Podaj liczbę znajdziek."
+                        placeholder="Np. 180"
                     >
                     <span class="field-hint">
-                        
+                        Opcjonalna wartość używana w liczniku postępu, np. 35 / 180.
                     </span>
                 </div>
 
@@ -1371,6 +1418,32 @@
                     <button id="admin-refresh-users" class="admin-refresh-button" type="button">Odśwież listę</button>
                 </div>
 
+                <div class="admin-access-requests">
+                    <div class="admin-access-requests-heading">
+                        <div>
+                            <h3>Oczekujące prośby o dostęp</h3>
+                            <p>Nowe konto powstaje dopiero po wysłaniu zaproszenia przez administratora.</p>
+                        </div>
+                        <span id="admin-access-requests-count" class="admin-access-request-count">0</span>
+                    </div>
+                    <div class="admin-access-requests-table-wrap">
+                        <table class="admin-access-requests-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col">PSEUDONIM</th>
+                                    <th scope="col">ADRES E-MAIL</th>
+                                    <th scope="col">ZGŁOSZONO</th>
+                                    <th scope="col">DZIAŁANIE</th>
+                                </tr>
+                            </thead>
+                            <tbody id="admin-access-requests-table-body">
+                                <tr><td colspan="4" class="admin-table-empty">Oczekujące zgłoszenia zostaną pobrane po otwarciu panelu.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="admin-access-requests-status" class="admin-access-requests-status" role="status" aria-live="polite">Lista zgłoszeń oczekujących.</div>
+                </div>
+
                 <div class="admin-section-heading">
                     <div>
                         <h3>Lista użytkowników</h3>
@@ -1409,8 +1482,8 @@
                 </div>
 
                 <p class="admin-panel-note">
-                    Właściciel projektu nie może zostać zdegradowany. Ostatni administrator jest chroniony,
-                    a administrator nie może odebrać rangi samemu sobie.
+                    Właściciel projektu i ostatni administrator są chronieni. Usunięcie konta zachowuje wspólne znajdźki,
+                    wydarzenia i zdjęcia; usuwa wyłącznie konto oraz osobiste postępy usuniętej osoby.
                 </p>
             </section>
 
@@ -1683,7 +1756,7 @@
                 <div id="admin-locations-list" class="admin-record-list">
                     <div class="admin-empty-state">Otwórz sekcję, aby pobrać lokalizacje.</div>
                 </div>
-                <p class="admin-panel-note"></p>
+                <p class="admin-panel-note">Archiwizacja lokalizacji jest globalna — ukrywa pinezkę we wszystkich wydarzeniach. Trwałe usunięcie jest możliwe wyłącznie wtedy, gdy lokalizacja nie ma przypisań do wydarzeń ani zapisanych postępów graczy.</p>
             </section>
             <!-- ORGANIZATION BACKUP AND RESTORE -->
             <section class="admin-view" data-admin-view="backup" aria-labelledby="admin-backup-title" hidden>
@@ -1744,7 +1817,7 @@
                         <li><strong>Historia aktywności:</strong> kopia obejmuje dziennik activity_log. Przywracanie dopisuje również nowe wpisy opisujące operacje wykonane podczas odtwarzania.</li>
                         <li><strong>Pliki galerii:</strong> pełna kopia obejmuje metadane oraz binarną zawartość zdjęć z Supabase Storage, również zarchiwizowanych. Limit pojedynczej kopii wynosi 100 MiB.</li>
                         <li><strong>Instrukcje i regulamin:</strong> pełna kopia obejmuje wszystkie rozdziały obu dokumentów, w tym nieopublikowane szkice.</li>
-                        <li><strong>Integralność i przechowywanie:</strong> suma SHA-256 wykrywa przypadkowe zmiany pliku, ale nie szyfruje go ani nie jest podpisem kryptograficznym. Plik zawiera prywatne dane - przechowuj go w bezpiecznym miejscu i nie udostępniaj osobom nieupoważnionym.</li>
+                        <li><strong>Integralność i przechowywanie:</strong> suma SHA-256 wykrywa przypadkowe zmiany pliku, ale nie szyfruje go ani nie jest podpisem kryptograficznym. Plik zawiera prywatne dane — przechowuj go w bezpiecznym miejscu i nie udostępniaj osobom nieupoważnionym.</li>
                     </ul>
                 </div>
             </section>
@@ -1754,8 +1827,8 @@
                 <article class="admin-settings-card">
                     <div class="admin-settings-card-heading">
                         <div>
-                            <h3>Galeria zdjęć</h3>
-                            <p>Kontrola możliwości dodawania nowych zdjęć przez graczy.</p>
+                            <h3>Galeria zdjęć znajdziek</h3>
+                            <p>Kontrola możliwości dodawania nowych screenshotów przez graczy.</p>
                         </div>
                         <label class="admin-switch" for="admin-block-player-image-uploads">
                             <input id="admin-block-player-image-uploads" type="checkbox">
@@ -1765,7 +1838,7 @@
                     </div>
                     <div class="admin-settings-toggle-copy">
                         <strong>Zablokuj możliwość wysyłania zdjęć</strong>
-                        <p>Po włączeniu gracze nie będą mogli dodawać nowych zdjęć. Nie wpłynie to na zdjęcia już dołączone do znajdziek.</p>
+                        <p>Po włączeniu gracze nie będą mogli dodawać nowych zdjęć. Nie wpłynie to na zdjęcia już dołączone do znajdziek — pozostaną widoczne. Administratorzy nadal mogą zarządzać galerią.</p>
                     </div>
                     <div id="admin-image-settings-status" class="admin-panel-status" role="status" aria-live="polite">Ustawienia zostaną pobrane po otwarciu tej sekcji.</div>
                 </article>
@@ -1850,7 +1923,7 @@
         <div class="eyebrow">POTWIERDZENIE OPERACJI</div>
         <h2 id="clear-catalog-progress-title">Usunąć wszystkie postępy?</h2>
         <p id="clear-catalog-progress-description">
-            Czy na pewno chcesz wyczyścić wszystkie swoje statusy znajdziek w katalogu „Wszystkie respy znajdziek”?
+            Czy na pewno chcesz wyczyścić wszystkie swoje statusy znajdziek w katalogu „Wszystkie respy”?
         </p>
         <div class="catalog-progress-reset-warning">
             Operacja usunie wyłącznie Twoje statusy katalogowe, w tym oznaczenia „Znaleziono”, „Nie ma”, „Niepewne” i „Do sprawdzenia”. Nie usunie pinezek, zdjęć ani opisów i nie zmieni postępów w żadnym wydarzeniu.
