@@ -4539,15 +4539,23 @@ body.has-image-lightbox {
 }
 
 .help-document-article-body ul,
-.help-document-article > div:not(.eyebrow) ul {
+.help-document-article-body ol,
+.help-document-article > div:not(.eyebrow) ul,
+.help-document-article > div:not(.eyebrow) ol {
     margin: 8px 0 12px;
-    padding-left: 21px;
+    padding-left: 24px;
 }
 
 .help-document-article-body li,
 .help-document-article > div:not(.eyebrow) li {
     padding-left: 3px;
     margin: 4px 0;
+}
+
+.help-document-article-body ol > li::marker,
+.help-document-article > div:not(.eyebrow) ol > li::marker {
+    color: var(--accent);
+    font-weight: 800;
 }
 
 .help-document-article-body strong,

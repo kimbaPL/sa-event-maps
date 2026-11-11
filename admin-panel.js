@@ -643,6 +643,7 @@ functions or the admin-only data layer. This module owns only UI.
         const output = [];
         let paragraph = [];
         let listItems = [];
+        let listType = null;
         const inline = value => escapeHelpHtml(value)
             .replace(/`([^`]+)`/g, "<code>$1</code>")
             .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
@@ -655,8 +656,10 @@ functions or the admin-only data layer. This module owns only UI.
         };
         const flushList = () => {
             if (listItems.length) {
-                output.push(`<ul>${listItems.map(item => `<li>${inline(item)}</li>`).join("")}</ul>`);
+                const tag = listType === "ol" ? "ol" : "ul";
+                output.push(`<${tag}>${listItems.map(item => `<li>${inline(item)}</li>`).join("")}</${tag}>`);
                 listItems = [];
+                listType = null;
             }
         };
 
@@ -676,9 +679,15 @@ functions or the admin-only data layer. This module owns only UI.
                 continue;
             }
             const bullet = line.match(/^[-*]\s+(.+)$/);
-            if (bullet) {
+            const numbered = line.match(/^\d+[.)]\s+(.+)$/);
+            if (bullet || numbered) {
                 flushParagraph();
-                listItems.push(bullet[1]);
+                const nextListType = numbered ? "ol" : "ul";
+                if (listType && listType !== nextListType) {
+                    flushList();
+                }
+                listType = nextListType;
+                listItems.push((numbered || bullet)[1]);
                 continue;
             }
             flushList();
