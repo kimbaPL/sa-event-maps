@@ -407,6 +407,45 @@ The UI must not write directly to localStorage.
         return rows;
     }
 
+    function validateGlobalSettingsBackup(backup) {
+        const rows = backup?.data?.app_settings;
+        if (rows === undefined) return []; // Older full backups remain compatible.
+        if (!Array.isArray(rows) || rows.length !== 1) {
+            throw new Error("Kopia zawiera nieprawidłową sekcję ustawień globalnych.");
+        }
+
+        const row = rows[0];
+        const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!row || Number(row.id) !== 1 || typeof row.allow_player_image_uploads !== "boolean") {
+            throw new Error("Kopia zawiera nieprawidłowe ustawienie możliwości wysyłania zdjęć.");
+        }
+        if (row.updated_by !== undefined && row.updated_by !== null && row.updated_by !== "" && !uuidPattern.test(String(row.updated_by))) {
+            throw new Error("Kopia zawiera nieprawidłowe konto osoby zmieniającej ustawienia globalne.");
+        }
+        if (row.updated_at !== undefined && row.updated_at !== null && row.updated_at !== "" && !Number.isFinite(Date.parse(row.updated_at))) {
+            throw new Error("Kopia zawiera nieprawidłową datę zmiany ustawień globalnych.");
+        }
+        return rows;
+    }
+
+    function countLocationOwnersInBackup(backup) {
+        const rows = backup?.data?.locations;
+        if (!Array.isArray(rows)) {
+            throw new Error("Kopia nie zawiera prawidłowej listy lokalizacji i ich właścicieli.");
+        }
+        const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        let count = 0;
+        for (const row of rows) {
+            if (row?.created_by !== undefined && row.created_by !== null && row.created_by !== "") {
+                if (!uuidPattern.test(String(row.created_by))) {
+                    throw new Error("Kopia zawiera lokalizację z nieprawidłowym identyfikatorem właściciela.");
+                }
+                count += 1;
+            }
+        }
+        return count;
+    }
+
     async function getLocationImage(locationId) {
         if (!locationId) return null;
         const { data: image, error } = await supabase
@@ -534,6 +573,8 @@ The UI must not write directly to localStorage.
         const { images, files } = validateBackupImages(backup, { requireBinary: true });
         const catalogProgress = validateCatalogProgressBackup(backup);
         const helpDocumentSections = validateHelpDocumentBackup(backup);
+        const globalSettings = validateGlobalSettingsBackup(backup);
+        const locationOwners = countLocationOwnersInBackup(backup);
         const sanitized = backupWithoutBinaryPayload(backup);
         const { data, error } = await supabase.rpc("admin_preview_organization_backup", {
             p_backup: sanitized
@@ -546,6 +587,8 @@ The UI must not write directly to localStorage.
         data.counts.storage_files = files.length;
         data.counts.player_catalog_progress = catalogProgress.length;
         data.counts.help_document_sections = helpDocumentSections.length;
+        data.counts.app_settings = globalSettings.length;
+        data.counts.location_owners = locationOwners;
         return data;
     }
 
@@ -554,6 +597,8 @@ The UI must not write directly to localStorage.
         const { images, files } = validateBackupImages(backup, { requireBinary: true });
         validateCatalogProgressBackup(backup);
         validateHelpDocumentBackup(backup);
+        validateGlobalSettingsBackup(backup);
+        countLocationOwnersInBackup(backup);
         const sanitized = backupWithoutBinaryPayload(backup);
         const backupPaths = new Set(files.map(file => file.object_path));
         const locationIds = images.map(image => image.location_id);

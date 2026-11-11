@@ -904,16 +904,19 @@ functions or the admin-only data layer. This module owns only UI.
 
     function renderBackupPreview(preview, fileName) {
         const labels = {
-            accounts: "Konta użytkowników",
+            accounts: "Konta użytkowników i pseudonimy",
             events: "Wydarzenia",
             locations: "Lokalizacje / znajdźki",
+            location_owners: "Przypisani właściciele znajdziek",
             event_locations: "Przypisania do wydarzeń",
             categories: "Kategorie",
             player_progress: "Postępy w wydarzeniach",
             player_catalog_progress: "Postępy w katalogu Wszystkie respy",
             activity_log: "Historia aktywności",
-            location_images: "Zdjęcia znajdziek",
-            help_document_sections: "Rozdziały instrukcji i regulaminu"
+            location_images: "Metadane zdjęć znajdziek",
+            storage_files: "Pliki zdjęć w prywatnym Storage",
+            help_document_sections: "Rozdziały instrukcji i regulaminu",
+            app_settings: "Ustawienia globalne"
         };
 
         backupCounts.replaceChildren();
@@ -947,21 +950,51 @@ functions or the admin-only data layer. This module owns only UI.
             backupEmailMatches.append(heading, explanation, list);
         }
 
-        const unmatched = Array.isArray(preview.unmatched_progress_accounts)
+        const unmatchedProgress = Array.isArray(preview.unmatched_progress_accounts)
             ? preview.unmatched_progress_accounts
             : [];
+        const unmatchedReferences = Array.isArray(preview.unmatched_profile_references)
+            ? preview.unmatched_profile_references
+            : [];
+        const unmatchedByUser = new Map();
+
+        for (const account of unmatchedProgress) {
+            unmatchedByUser.set(account.user_id, {
+                ...account,
+                progress_rows: Number(account.progress_rows || 0),
+                reference_count: 0,
+                reference_types: []
+            });
+        }
+        for (const account of unmatchedReferences) {
+            const existing = unmatchedByUser.get(account.user_id) || {
+                ...account,
+                progress_rows: 0,
+                reference_count: 0,
+                reference_types: []
+            };
+            existing.reference_count = Number(account.reference_count || 0);
+            existing.reference_types = Array.isArray(account.reference_types) ? account.reference_types : [];
+            if (!existing.email) existing.email = account.email || "";
+            if (!existing.display_name) existing.display_name = account.display_name || "";
+            unmatchedByUser.set(account.user_id, existing);
+        }
+        const unmatched = [...unmatchedByUser.values()];
         backupUnmatched.replaceChildren();
         backupUnmatched.hidden = unmatched.length === 0;
         if (unmatched.length > 0) {
             const heading = document.createElement("h4");
-            heading.textContent = "Nie znaleziono kont z zapisanym postępem";
+            heading.textContent = "Nie znaleziono kont powiązanych z danymi kopii";
             const explanation = document.createElement("p");
-            explanation.textContent = "Przed przywróceniem te konta muszą istnieć w Supabase pod tym samym adresem e-mail lub identyfikatorem. Import został zablokowany, aby nie zgubić ich postępów.";
+            explanation.textContent = "Przed przywróceniem te konta muszą istnieć w Supabase pod tym samym adresem e-mail lub identyfikatorem. Jest to konieczne, aby zachować postępy graczy oraz autorstwo i właścicieli znajdziek.";
             const list = document.createElement("ul");
             for (const account of unmatched) {
                 const item = document.createElement("li");
                 const identity = account.email || account.display_name || account.user_id;
-                item.textContent = `${identity} — ${account.progress_rows} wpisów postępu`;
+                const details = [];
+                if (account.progress_rows > 0) details.push(`${account.progress_rows} wpisów postępu`);
+                if (account.reference_count > 0) details.push(`powiązania: ${account.reference_types.join(", ")}`);
+                item.textContent = `${identity} — ${details.join("; ") || "konto wymagane do przywrócenia danych"}`;
                 list.appendChild(item);
             }
             backupUnmatched.append(heading, explanation, list);
@@ -1067,7 +1100,7 @@ functions or the admin-only data layer. This module owns only UI.
             clearBackupPreview();
             backupFileInput.value = "";
             setBackupStatus(
-                `Przywracanie zakończone. Wydarzenia: ${result.events_processed}; lokalizacje: ${result.locations_processed}; przypisania: ${result.assignments_processed}; kategorie: ${result.categories_processed}; postępy w wydarzeniach: ${result.progress_rows_processed}; postępy w katalogu: ${result.catalog_progress_rows_processed || 0}; historia: ${result.activity_log_rows_processed}; zdjęcia: ${result.images_processed || 0}. Rangi i właściciel projektu pozostały bez zmian.${result.orphaned_storage_files ? ` Uwaga: nie udało się usunąć ${result.orphaned_storage_files} zastąpionych plików ze Storage.` : ""}`,
+                `Przywracanie zakończone. Konta/pseudonimy: ${result.profiles_updated || 0}; wydarzenia: ${result.events_processed}; lokalizacje: ${result.locations_processed}; właściciele znajdziek: ${result.location_owners_processed || 0}; przypisania: ${result.assignments_processed}; kategorie: ${result.categories_processed}; postępy w wydarzeniach: ${result.progress_rows_processed}; postępy w katalogu: ${result.catalog_progress_rows_processed || 0}; rozdziały instrukcji/regulaminu: ${result.help_document_sections_processed || 0}; zdjęcia: ${result.images_processed || 0}; ustawienia globalne: ${result.app_settings_processed ? "przywrócone" : "bez zmian (stara kopia)"}; zgłoszenia usunięcia znajdziek: ${result.location_deletion_requests_processed || 0}; historia: ${result.activity_log_rows_processed}. Rangi i właściciel projektu pozostały bez zmian.${result.orphaned_storage_files ? ` Uwaga: nie udało się usunąć ${result.orphaned_storage_files} zastąpionych plików ze Storage.` : ""}`,
                 result.orphaned_storage_files ? "error" : "success"
             );
         } catch (error) {
@@ -1848,12 +1881,6 @@ functions or the admin-only data layer. This module owns only UI.
         locationXInput.value = location?.world?.x ?? "";
         locationYInput.value = location?.world?.y ?? "";
         locationZInput.value = location?.world?.z ?? "";
-        const coordinatesLocked = Boolean(location?.isPinned);
-        locationXInput.disabled = coordinatesLocked;
-        locationYInput.disabled = coordinatesLocked;
-        locationZInput.disabled = coordinatesLocked;
-        const coordinateLockNote = byId("admin-location-coordinate-lock-note");
-        if (coordinateLockNote) coordinateLockNote.hidden = !coordinatesLocked;
         locationDescriptionInput.value = location?.description || "";
         locationImageFileInput.value = "";
         locationImageActions.hidden = true;
@@ -1894,11 +1921,6 @@ functions or the admin-only data layer. This module owns only UI.
         locationIdInput.value = "";
         locationImageActions.hidden = true;
         locationImageFileInput.disabled = false;
-        locationXInput.disabled = false;
-        locationYInput.disabled = false;
-        locationZInput.disabled = false;
-        const coordinateLockNote = byId("admin-location-coordinate-lock-note");
-        if (coordinateLockNote) coordinateLockNote.hidden = true;
         locationImageFileStatus.textContent = "Opcjonalnie — jedno zdjęcie na znajdźkę. Zostanie automatycznie skompresowane do WebP.";
         locationReturnEventId = null;
     }
@@ -1937,8 +1959,8 @@ functions or the admin-only data layer. This module owns only UI.
             const title = document.createElement("h3");
             title.textContent = location.name;
             const state = document.createElement("span");
-            state.className = `admin-status-pill ${location.isDeletionPending ? "is-pending" : location.isArchived ? "is-archived" : location.isPinned ? "is-pinned" : "is-active"}`;
-            state.textContent = location.isDeletionPending ? "Usuwanie w toku" : location.isArchived ? "Zarchiwizowana" : location.isPinned ? "Zablokowana" : "Aktywna";
+            state.className = `admin-status-pill ${location.isArchived ? "is-archived" : location.isPinned ? "is-pinned" : "is-active"}`;
+            state.textContent = location.isArchived ? "Zarchiwizowana" : location.isPinned ? "Zablokowana" : "Aktywna";
             heading.append(title, state);
             const description = document.createElement("p");
             description.className = "admin-record-description";
@@ -1956,14 +1978,14 @@ functions or the admin-only data layer. This module owns only UI.
             main.append(heading, description, meta);
             const actions = document.createElement("div");
             actions.className = "admin-record-actions";
-            actions.appendChild(makeActionButton("Edytuj", "edit", location.id, "locationAction", false, location.isDeletionPending));
-            if (!location.isDeletionPending && !location.isArchived) {
+            actions.appendChild(makeActionButton("Edytuj", "edit", location.id, "locationAction"));
+            if (!location.isArchived) {
                 actions.appendChild(makeActionButton(location.isPinned ? "Odblokuj" : "Zablokuj", location.isPinned ? "unpin" : "pin", location.id, "locationAction"));
                 actions.appendChild(makeActionButton("Archiwizuj", "archive", location.id, "locationAction"));
-            } else if (!location.isDeletionPending) {
+            } else {
                 actions.appendChild(makeActionButton("Przywróć", "restore", location.id, "locationAction"));
             }
-            actions.appendChild(makeActionButton(location.isDeletionPending ? "Dokończ usuwanie" : "Usuń na stałe", "delete", location.id, "locationAction", true));
+            actions.appendChild(makeActionButton("Usuń na stałe", "delete", location.id, "locationAction", true, assignmentCount > 0));
             card.append(main, actions);
             locationsList.appendChild(card);
         }
@@ -2079,13 +2101,7 @@ functions or the admin-only data layer. This module owns only UI.
         } else if (action === "restore") {
             accepted = window.confirm(`Przywrócić wydarzenie „${event.name}”?\n\nWydarzenie wróci ze statusem sprzed archiwizacji.`);
         } else if (action === "delete") {
-            const assignedCount = assignmentCountForEvent(event.id);
-            accepted = window.confirm(
-                `Trwale usunąć wydarzenie „${event.name}”?\n\n` +
-                `Usunięte zostaną przypisania ${assignedCount} znajdziek oraz wszystkie osobiste statusy graczy zapisane dla tego wydarzenia.\n\n` +
-                "Globalne pinezki, ich zdjęcia oraz osobiste postępy w „Wszystkich respach” pozostaną bez zmian.\n\n" +
-                "Tej operacji nie można cofnąć."
-            );
+            accepted = window.confirm(`Trwale usunąć wydarzenie „${event.name}”?\n\nPrzypisania znajdziek do tego wydarzenia zostaną usunięte, ale same pinezki pozostaną w katalogu. Jeżeli istnieje choć jeden zapis postępu gracza, baza zablokuje usunięcie. Tej operacji nie można cofnąć.`);
         } else return;
         if (!accepted) return;
 
@@ -2159,28 +2175,21 @@ functions or the admin-only data layer. This module owns only UI.
     async function saveLocation(event) {
         event.preventDefault();
         const name = locationNameInput.value.trim();
-        const id = locationIdInput.value.trim();
-        const currentLocation = id ? locations.find(item => item.id === id) : null;
-        const coordinatesLocked = Boolean(currentLocation?.isPinned);
-        const x = coordinatesLocked ? currentLocation.world.x : Number(locationXInput.value);
-        const y = coordinatesLocked ? currentLocation.world.y : Number(locationYInput.value);
-        const z = coordinatesLocked
-            ? currentLocation.world.z
-            : locationZInput.value === "" ? null : Number(locationZInput.value);
-        if (!name || (!coordinatesLocked && (
-            locationXInput.value === "" || locationYInput.value === "" ||
-            !Number.isFinite(x) || !Number.isFinite(y) || (z !== null && !Number.isFinite(z))
-        ))) {
+        const x = Number(locationXInput.value);
+        const y = Number(locationYInput.value);
+        const z = locationZInput.value === "" ? null : Number(locationZInput.value);
+        if (!name || locationXInput.value === "" || locationYInput.value === "" || !Number.isFinite(x) || !Number.isFinite(y) || (z !== null && !Number.isFinite(z))) {
             setLocationStatus("Podaj nazwę oraz prawidłowe współrzędne X i Y. Z może pozostać puste.", "error");
             return;
         }
+        const id = locationIdInput.value.trim();
         const returnEventId = locationReturnEventId;
         const input = {
             name,
             area: locationAreaInput.value.trim() || "Nie określono",
-            description: locationDescriptionInput.value.trim()
+            description: locationDescriptionInput.value.trim(),
+            world: {x, y, z}
         };
-        if (!coordinatesLocked) input.world = {x, y, z};
         const selectedImageFile = locationImageFileInput.files?.[0];
         let preparedImage = null;
         let imageWarning = "";
@@ -2266,26 +2275,7 @@ functions or the admin-only data layer. This module owns only UI.
         } else if (action === "restore") {
             accepted = window.confirm(`Przywrócić lokalizację „${location.name}”?\n\nPinezka ponownie będzie dostępna w przypisanych wydarzeniach.`);
         } else if (action === "delete") {
-            if (location.isDeletionPending) {
-                accepted = window.confirm(
-                    `Usuwanie znajdźki „${location.name}” zostało już rozpoczęte, ale nie zostało zakończone.\n\n` +
-                    "Pinezka pozostaje zabezpieczona przed edycją i zmianą postępów. Ponowienie spróbuje dokończyć usuwanie zdjęć oraz powiązanych danych.\n\nCzy kontynuować?"
-                );
-            } else {
-                const assignedEvents = eventLocations
-                    .filter(item => item.locationId === location.id)
-                    .map(item => events.find(event => event.id === item.eventId)?.name)
-                    .filter(Boolean);
-                const eventList = assignedEvents.length
-                    ? assignedEvents.map(name => `• ${name}`).join("\n")
-                    : "Brak przypisań do wydarzeń.";
-                accepted = window.confirm(
-                    `Trwale usunąć znajdźkę „${location.name}”?\n\n` +
-                    `Pinezka zniknie ze wszystkich wydarzeń (${assignedEvents.length}):\n${eventList}\n\n` +
-                    "Zostaną również usunięte wszystkie statusy wszystkich graczy w wydarzeniach i w „Wszystkich respach”, zdjęcie oraz jego plik z prywatnego Storage.\n\n" +
-                    "Tej operacji nie można cofnąć. Jeśli chcesz tylko ukryć lokalizację, użyj archiwizacji."
-                );
-            }
+            accepted = window.confirm(`Trwale usunąć znajdźkę „${location.name}”?\n\nBaza pozwoli na to wyłącznie wtedy, gdy lokalizacja nie jest przypisana do żadnego wydarzenia, nie ma zapisanych postępów graczy i nie ma zdjęcia. Jeśli ma zdjęcie, usuń je najpierw z panelu szczegółów znajdźki. Tej operacji nie można cofnąć.`);
         } else return;
         if (!accepted) return;
 
@@ -2303,7 +2293,6 @@ functions or the admin-only data layer. This module owns only UI.
             setLocationStatus(`${labels[action]} znajdźkę „${location.name}”.`, "success");
         } catch (error) {
             console.error("SA Event Maps: Operacja na lokalizacji nie powiodła się.", error);
-            if (error?.locationDeletionPending) await refreshManagementData();
             setLocationStatus(error.message || "Nie udało się wykonać operacji na lokalizacji.", "error");
         } finally {
             locationsList.querySelectorAll("button").forEach(button => button.disabled = false);
