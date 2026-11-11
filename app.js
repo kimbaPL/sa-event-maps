@@ -1817,6 +1817,9 @@ UUIDs are internal only. No visible location numbering.
 
         updateAssignmentControls();
         renderProgressEditor(location);
+        // A previous clearSelectedLocation() hides this dynamic panel.
+        // Every real catalog location must show its own progress controls again.
+        if (progressPanel) progressPanel.hidden = false;
     }
 
     async function toggleSelectedPin() {
