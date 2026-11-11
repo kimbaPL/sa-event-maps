@@ -247,8 +247,14 @@ UUIDs are internal only. No visible location numbering.
         const nameElement = document.querySelector(
             ".auth-user-control .auth-user-info strong"
         );
-        if (nameElement && currentUser?.displayName) {
-            nameElement.textContent = currentUser.displayName;
+        const nextDisplayName = currentUser?.displayName
+            ? String(currentUser.displayName)
+            : "";
+
+        // Avoid replacing the text node when the value is already current.
+        // This is important because the top-bar observer watches DOM changes.
+        if (nameElement && nextDisplayName && nameElement.textContent !== nextDisplayName) {
+            nameElement.textContent = nextDisplayName;
         }
     }
 
@@ -389,8 +395,18 @@ UUIDs are internal only. No visible location numbering.
         installTopbarDisplayNameEditor();
 
         const observer = new MutationObserver(() => {
-            installTopbarDisplayNameEditor();
+            const authControl = document.querySelector(".auth-user-control");
+            const nameElement = authControl?.querySelector(".auth-user-info strong");
+            const editorExists = authControl?.querySelector(".auth-profile-name-editor");
+
+            // Retry only while the account control exists but the editor has
+            // not been installed yet. Inserting/updating our own editor must
+            // never trigger another installation cycle.
+            if (authControl && nameElement && !editorExists) {
+                installTopbarDisplayNameEditor();
+            }
         });
+
         observer.observe(document.body, { childList: true, subtree: true });
     }
 
