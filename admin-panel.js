@@ -1848,6 +1848,12 @@ functions or the admin-only data layer. This module owns only UI.
         locationXInput.value = location?.world?.x ?? "";
         locationYInput.value = location?.world?.y ?? "";
         locationZInput.value = location?.world?.z ?? "";
+        const coordinatesLocked = Boolean(location?.isPinned);
+        locationXInput.disabled = coordinatesLocked;
+        locationYInput.disabled = coordinatesLocked;
+        locationZInput.disabled = coordinatesLocked;
+        const coordinateLockNote = byId("admin-location-coordinate-lock-note");
+        if (coordinateLockNote) coordinateLockNote.hidden = !coordinatesLocked;
         locationDescriptionInput.value = location?.description || "";
         locationImageFileInput.value = "";
         locationImageActions.hidden = true;
@@ -1888,6 +1894,11 @@ functions or the admin-only data layer. This module owns only UI.
         locationIdInput.value = "";
         locationImageActions.hidden = true;
         locationImageFileInput.disabled = false;
+        locationXInput.disabled = false;
+        locationYInput.disabled = false;
+        locationZInput.disabled = false;
+        const coordinateLockNote = byId("admin-location-coordinate-lock-note");
+        if (coordinateLockNote) coordinateLockNote.hidden = true;
         locationImageFileStatus.textContent = "Opcjonalnie — jedno zdjęcie na znajdźkę. Zostanie automatycznie skompresowane do WebP.";
         locationReturnEventId = null;
     }
@@ -2148,21 +2159,28 @@ functions or the admin-only data layer. This module owns only UI.
     async function saveLocation(event) {
         event.preventDefault();
         const name = locationNameInput.value.trim();
-        const x = Number(locationXInput.value);
-        const y = Number(locationYInput.value);
-        const z = locationZInput.value === "" ? null : Number(locationZInput.value);
-        if (!name || locationXInput.value === "" || locationYInput.value === "" || !Number.isFinite(x) || !Number.isFinite(y) || (z !== null && !Number.isFinite(z))) {
+        const id = locationIdInput.value.trim();
+        const currentLocation = id ? locations.find(item => item.id === id) : null;
+        const coordinatesLocked = Boolean(currentLocation?.isPinned);
+        const x = coordinatesLocked ? currentLocation.world.x : Number(locationXInput.value);
+        const y = coordinatesLocked ? currentLocation.world.y : Number(locationYInput.value);
+        const z = coordinatesLocked
+            ? currentLocation.world.z
+            : locationZInput.value === "" ? null : Number(locationZInput.value);
+        if (!name || (!coordinatesLocked && (
+            locationXInput.value === "" || locationYInput.value === "" ||
+            !Number.isFinite(x) || !Number.isFinite(y) || (z !== null && !Number.isFinite(z))
+        ))) {
             setLocationStatus("Podaj nazwę oraz prawidłowe współrzędne X i Y. Z może pozostać puste.", "error");
             return;
         }
-        const id = locationIdInput.value.trim();
         const returnEventId = locationReturnEventId;
         const input = {
             name,
             area: locationAreaInput.value.trim() || "Nie określono",
-            description: locationDescriptionInput.value.trim(),
-            world: {x, y, z}
+            description: locationDescriptionInput.value.trim()
         };
+        if (!coordinatesLocked) input.world = {x, y, z};
         const selectedImageFile = locationImageFileInput.files?.[0];
         let preparedImage = null;
         let imageWarning = "";

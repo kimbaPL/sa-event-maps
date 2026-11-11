@@ -152,6 +152,8 @@ UUIDs are internal only. No visible location numbering.
         selectedImageOpen: byId("open-selected-pin-image"),
         selectedImageArchivedLabel: byId("selected-pin-image-archived-label"),
         selectedImageAdminActions: byId("selected-pin-image-admin-actions"),
+        selectedImageOwnerActions: byId("selected-pin-image-owner-actions"),
+        deleteOwnSelectedImage: byId("delete-own-selected-pin-image"),
         archiveSelectedImage: byId("archive-selected-pin-image"),
         restoreSelectedImage: byId("restore-selected-pin-image"),
         deleteSelectedImage: byId("delete-selected-pin-image"),
@@ -188,7 +190,8 @@ UUIDs are internal only. No visible location numbering.
         description: document.querySelector(".pin-editor #pin-description"),
         imageFile: byId("pin-image-file"),
         imageFileStatus: byId("pin-image-file-status"),
-        imageUploadGroup: byId("pin-image-upload-group")
+        imageUploadGroup: byId("pin-image-upload-group"),
+        coordinateLockNote: byId("pin-coordinate-lock-note")
     };
 
     const detailFields = {
@@ -248,6 +251,8 @@ UUIDs are internal only. No visible location numbering.
     let helpDocumentsLoaded = false;
     let helpDocumentSections = [];
     let activeHelpDocumentType = "instructions";
+    let helpWorkspaceScrollPosition = 0;
+    let helpReturnNavigationButton = null;
 
     // ================================================
     // 4. SMALL HELPERS
@@ -286,7 +291,9 @@ UUIDs are internal only. No visible location numbering.
         }
         if (form.imageFileStatus) {
             if (hasImage) {
-                form.imageFileStatus.textContent = "Ta znajdźka ma już przypisane zdjęcie. Aby dodać inne, administrator musi najpierw trwale usunąć obecny plik.";
+                form.imageFileStatus.textContent = isAdmin()
+                    ? "Ta znajdźka ma już zdjęcie. Aby dodać inne, najpierw usuń obecne z podglądu w prawym panelu za pomocą przycisku administratora."
+                    : "Ta znajdźka ma już zdjęcie. Aby dodać inne, usuń obecne przyciskiem „Usuń swoje zdjęcie” w prawym panelu. Ta możliwość jest dostępna tylko przed przypięciem pinezki.";
             } else if (!canUpload) {
                 form.imageFileStatus.textContent = "Administrator zablokował dodawanie nowych zdjęć. Istniejące zdjęcia pozostają widoczne.";
             } else if (isEditingLocation) {
@@ -311,6 +318,7 @@ UUIDs are internal only. No visible location numbering.
         selectedLocationImage = null;
         elements.selectedImageContainer.hidden = true;
         elements.selectedImageAdminActions.hidden = true;
+        elements.selectedImageOwnerActions.hidden = true;
         elements.selectedImageArchivedLabel.hidden = true;
         elements.selectedImage.removeAttribute("src");
         if (!locationId) return;
@@ -326,7 +334,17 @@ UUIDs are internal only. No visible location numbering.
             elements.selectedImageContainer.hidden = false;
             elements.selectedImageArchivedLabel.hidden = !image.is_archived;
             const imageLocation = getLocationById(locationId);
+            const ownerCanDeleteImage = Boolean(
+                !isAdmin() &&
+                imageLocation &&
+                imageLocation.createdBy === currentUser?.id &&
+                !imageLocation.isPinned &&
+                !imageLocation.isArchived &&
+                !imageLocation.isDeletionPending
+            );
             elements.selectedImageAdminActions.hidden = !isAdmin() || Boolean(imageLocation?.isDeletionPending);
+            elements.selectedImageOwnerActions.hidden = !ownerCanDeleteImage;
+            elements.deleteOwnSelectedImage.disabled = !ownerCanDeleteImage;
             elements.archiveSelectedImage.hidden = image.is_archived;
             elements.restoreSelectedImage.hidden = !image.is_archived;
             updateImageUploadAvailability();
@@ -361,26 +379,47 @@ UUIDs are internal only. No visible location numbering.
 
     async function runSelectedImageAction(action) {
         const location = getLocationById(selectedLocationId);
-        if (!isAdmin() || !selectedLocationImage || location?.isDeletionPending) return;
+        if (!location || !selectedLocationImage || location.isDeletionPending) return;
+
+        const isOwner = location.createdBy === currentUser?.id;
+        const ownerCanDelete = isOwner && !location.isPinned && !location.isArchived;
+        if ((action === "archive" || action === "restore") && !isAdmin()) return;
+        if (action === "delete" && !isAdmin() && !ownerCanDelete) return;
+        if (!(action === "archive" || action === "restore" || action === "delete")) return;
+
         const image = selectedLocationImage;
         if (action === "delete") {
-            const accepted = window.confirm(
-                `Czy na pewno trwale usunąć zdjęcie znajdźki „${elements.selectedName.textContent}”?\n\nPlik zostanie usunięty z Supabase Storage i zwolni miejsce.`
-            );
-            if (!accepted) return;
+            const message = isAdmin()
+                ? `Czy na pewno trwale usunąć zdjęcie znajdźki „${elements.selectedName.textContent}”?\n\nPlik zostanie usunięty z prywatnego Supabase Storage. Sama pinezka, jej przypisania i postępy pozostaną bez zmian.`
+                : `Czy na pewno usunąć Twoje zdjęcie znajdźki „${elements.selectedName.textContent}”?\n\nUsunięty zostanie wyłącznie plik zdjęcia i jego metadane. Pinezka, przypisania do wydarzeń oraz postępy wszystkich graczy pozostaną bez zmian.\n\nPo usunięciu będzie można dodać nowe zdjęcie, dopóki pinezka pozostaje nieprzypięta.`;
+            if (!window.confirm(message)) return;
         }
 
+        const actionButtons = [
+            elements.archiveSelectedImage,
+            elements.restoreSelectedImage,
+            elements.deleteSelectedImage,
+            elements.deleteOwnSelectedImage
+        ];
+
         try {
-            elements.archiveSelectedImage.disabled = true;
-            elements.restoreSelectedImage.disabled = true;
-            elements.deleteSelectedImage.disabled = true;
+            actionButtons.forEach(button => { button.disabled = true; });
             if (action === "archive") await dataApi.archiveLocationImage(image.id);
             if (action === "restore") await dataApi.restoreLocationImage(image.id);
             if (action === "delete") await dataApi.deleteLocationImage(image.id);
+
             selectedLocationImage = null;
             if (action === "delete" && editingLocationId === selectedLocationId) {
                 editingLocationHasImage = false;
                 editingLocationCanUploadImage = Boolean(currentUser?.isAdmin || imageUploadsEnabled);
+                try {
+                    const imageState = await dataApi.getLocationImageUploadState(selectedLocationId);
+                    editingLocationHasImage = imageState.hasImage;
+                    editingLocationCanUploadImage = imageState.canUpload;
+                    imageUploadsEnabled = imageState.playerUploadsEnabled;
+                } catch (stateError) {
+                    console.warn("SA Event Maps: Nie udało się odświeżyć stanu pola zdjęcia po usunięciu.", stateError);
+                }
                 form.imageFile.value = "";
                 updateImageUploadAvailability();
             }
@@ -388,15 +427,13 @@ UUIDs are internal only. No visible location numbering.
             setEditorStatus(
                 action === "archive" ? "Zdjęcie zostało zarchiwizowane. Plik nadal zajmuje miejsce w Storage." :
                 action === "restore" ? "Zdjęcie zostało przywrócone." :
-                "Zdjęcie zostało trwale usunięte z Storage."
+                "Zdjęcie zostało trwale usunięte. Możesz dodać nowe, jeśli pinezka nadal jest nieprzypięta."
             );
         } catch (error) {
             console.error("SA Event Maps: Operacja na zdjęciu nie powiodła się.", error);
             setEditorStatus(error.message || "Nie udało się wykonać operacji na zdjęciu.");
         } finally {
-            elements.archiveSelectedImage.disabled = false;
-            elements.restoreSelectedImage.disabled = false;
-            elements.deleteSelectedImage.disabled = false;
+            actionButtons.forEach(button => { button.disabled = false; });
             updateImageUploadAvailability();
         }
     }
@@ -522,9 +559,9 @@ UUIDs are internal only. No visible location numbering.
     }
 
     function canMoveLocation(location) {
-        return (
+        return Boolean(
             canEditLocation(location) &&
-            (!location.isPinned || isAdmin()) &&
+            !location.isPinned &&
             !location.isArchived
         );
     }
@@ -1509,6 +1546,7 @@ UUIDs are internal only. No visible location numbering.
         selectedLocationImage = null;
         elements.selectedImageContainer.hidden = true;
         elements.selectedImageAdminActions.hidden = true;
+        elements.selectedImageOwnerActions.hidden = true;
         elements.selectedImage.removeAttribute("src");
 
         if (progressPanel) progressPanel.hidden = true;
@@ -1522,6 +1560,14 @@ UUIDs are internal only. No visible location numbering.
 
     function showLocationDetails(location) {
         selectedLocationId = location.id;
+
+        if (editingLocationId === location.id) {
+            const coordinatesLocked = Boolean(location.isPinned);
+            form.x.disabled = coordinatesLocked;
+            form.y.disabled = coordinatesLocked;
+            form.z.disabled = coordinatesLocked;
+            form.coordinateLockNote.hidden = !coordinatesLocked;
+        }
 
         elements.emptyDetails.hidden = true;
         elements.selectedDetails.hidden = false;
@@ -1562,7 +1608,9 @@ UUIDs are internal only. No visible location numbering.
         editLocationButton.disabled = !canEdit;
 
         const isOwner = location.createdBy === currentUser?.id;
-        const canSeePermanentDelete = !location.isReference && (isAdmin() || isOwner);
+        const canSeePermanentDelete = !location.isReference && (
+            isAdmin() || (isOwner && !location.isPinned && !location.isArchived)
+        );
         const canDeleteAsOwner = isOwner && !location.isPinned && !location.isArchived &&
             (!location.isDeletionPending || location.deletionRequestedBy === currentUser?.id);
         permanentlyDeleteLocationButton.hidden = !canSeePermanentDelete;
@@ -1757,6 +1805,11 @@ UUIDs are internal only. No visible location numbering.
             location.world.z === null || location.world.z === undefined
                 ? ""
                 : String(location.world.z);
+        const coordinatesLocked = Boolean(location.isPinned);
+        form.x.disabled = coordinatesLocked;
+        form.y.disabled = coordinatesLocked;
+        form.z.disabled = coordinatesLocked;
+        form.coordinateLockNote.hidden = !coordinatesLocked;
         form.description.value = location.description || "";
         form.imageFile.value = "";
 
@@ -1795,9 +1848,11 @@ UUIDs are internal only. No visible location numbering.
     async function saveLocationFromForm() {
         const name = form.name.value.trim();
         const area = form.area.value.trim() || "Nie określono";
-        const xText = form.x.value.trim();
-        const yText = form.y.value.trim();
-        const zValue = parseOptionalNumber(form.z.value);
+        const editingLocation = editingLocationId ? getLocationById(editingLocationId) : null;
+        const coordinatesLocked = Boolean(editingLocation?.isPinned);
+        const xText = coordinatesLocked ? String(editingLocation.world.x) : form.x.value.trim();
+        const yText = coordinatesLocked ? String(editingLocation.world.y) : form.y.value.trim();
+        const zValue = coordinatesLocked ? editingLocation.world.z : parseOptionalNumber(form.z.value);
         const description = form.description.value.trim();
 
         if (!name) {
@@ -1840,10 +1895,12 @@ UUIDs are internal only. No visible location numbering.
             imageWarning = ` Zdjęcie pominięto: ${imageError.message || "nie udało się przygotować obrazu."}`;
         }
 
-        const pixel = worldToPixel(x, y);
-        if (!isPixelInsideImage(pixel.x, pixel.y)) {
-            setEditorStatus("Podane współrzędne znajdują się poza granicami mapy.");
-            return;
+        if (!coordinatesLocked) {
+            const pixel = worldToPixel(x, y);
+            if (!isPixelInsideImage(pixel.x, pixel.y)) {
+                setEditorStatus("Podane współrzędne znajdują się poza granicami mapy.");
+                return;
+            }
         }
 
         elements.addPin.disabled = true;
@@ -1856,12 +1913,9 @@ UUIDs are internal only. No visible location numbering.
                     throw new Error("Nie masz uprawnień do edycji tej pinezki.");
                 }
 
-                const updated = await dataApi.updateLocation(location.id, {
-                    name,
-                    area,
-                    description,
-                    world: { x, y, z: zValue }
-                });
+                const updateInput = { name, area, description };
+                if (!location.isPinned) updateInput.world = { x, y, z: zValue };
+                const updated = await dataApi.updateLocation(location.id, updateInput);
 
                 Object.assign(location, updated);
                 if (preparedImage) {
@@ -1949,6 +2003,10 @@ UUIDs are internal only. No visible location numbering.
         form.z.value = "";
         form.description.value = "";
         form.imageFile.value = "";
+        form.x.disabled = false;
+        form.y.disabled = false;
+        form.z.disabled = false;
+        form.coordinateLockNote.hidden = true;
         form.imageFileStatus.textContent = "Opcjonalnie — jedno zdjęcie na znajdźkę. Zostanie automatycznie zmniejszone do WebP przed wysłaniem.";
         editingLocationId = null;
         editingLocationHasImage = false;
@@ -2000,6 +2058,7 @@ UUIDs are internal only. No visible location numbering.
     elements.archiveSelectedImage.addEventListener("click", () => void runSelectedImageAction("archive"));
     elements.restoreSelectedImage.addEventListener("click", () => void runSelectedImageAction("restore"));
     elements.deleteSelectedImage.addEventListener("click", () => void runSelectedImageAction("delete"));
+    elements.deleteOwnSelectedImage.addEventListener("click", () => void runSelectedImageAction("delete"));
 
     elements.clearForm.addEventListener("click", () => {
         clearPinForm();
@@ -2488,30 +2547,69 @@ UUIDs are internal only. No visible location numbering.
         }
     }
 
+    function openHelpWorkspace() {
+        const workspace = byId("help-workspace");
+        const navigationButton = byId("help-nav-button");
+        if (!workspace || !workspace.hidden) return;
+
+        helpWorkspaceScrollPosition = window.scrollY || 0;
+        helpReturnNavigationButton = document.querySelector(".navigation .nav-item.is-active");
+
+        document.querySelectorAll(".navigation .nav-item").forEach(button => {
+            button.classList.remove("is-active");
+        });
+        navigationButton?.classList.add("is-active");
+
+        appShell.hidden = true;
+        workspace.hidden = false;
+        document.body.classList.add("is-help-workspace");
+        window.scrollTo({ top: 0, behavior: "auto" });
+        void loadHelpCenter(true);
+    }
+
+    function closeHelpWorkspace() {
+        const workspace = byId("help-workspace");
+        if (!workspace || workspace.hidden) return;
+
+        workspace.hidden = true;
+        appShell.hidden = false;
+        document.body.classList.remove("is-help-workspace");
+        byId("help-nav-button")?.classList.remove("is-active");
+
+        if (helpReturnNavigationButton?.isConnected) {
+            helpReturnNavigationButton.classList.add("is-active");
+        } else {
+            document.querySelector(".navigation .nav-item")?.classList.add("is-active");
+        }
+        helpReturnNavigationButton = null;
+        window.scrollTo({ top: helpWorkspaceScrollPosition, behavior: "auto" });
+    }
+
     function setupNavigation() {
         const buttons = [
-            ...document.querySelectorAll(".navigation .nav-item")
+            ...document.querySelectorAll(".navigation .nav-item:not(#admin-nav-button)")
         ];
 
         const targets = [
             document.querySelector(".workspace-grid"),
             document.querySelector(".catalog-panel"),
-            document.querySelector(".event-management"),
-            byId("help-center")
+            document.querySelector(".event-management")
         ];
 
         buttons.forEach((button, index) => {
-            const target = targets[index];
-            if (!target) return;
-
             button.addEventListener("click", () => {
+                if (index === 3) {
+                    openHelpWorkspace();
+                    return;
+                }
+
+                const target = targets[index];
+                if (!target) return;
+
                 if (index === 0) {
                     currentFilterId = "all";
                     elements.eventFilter.value = "all";
                     renderApplication();
-                }
-                if (index === 3) {
-                    void loadHelpCenter(true);
                 }
 
                 target.scrollIntoView({
@@ -2524,8 +2622,10 @@ UUIDs are internal only. No visible location numbering.
             });
         });
 
+        byId("help-back-to-map")?.addEventListener("click", closeHelpWorkspace);
+
         document.querySelectorAll("[data-help-document-tab]").forEach(button => {
-            if (button.closest(".admin-workspace")) return;
+            if (button.closest("#admin-workspace")) return;
             button.addEventListener("click", () => {
                 activeHelpDocumentType = button.dataset.helpDocumentTab;
                 document.querySelectorAll("#help-center [data-help-document-tab]").forEach(tab => {
@@ -2679,6 +2779,7 @@ UUIDs are internal only. No visible location numbering.
     }
 
     function clearCloudState() {
+        if (!byId("help-workspace")?.hidden) closeHelpWorkspace();
         currentUser = null;
         dataReady = false;
         imageUploadsEnabled = false;

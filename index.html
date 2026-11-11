@@ -796,6 +796,9 @@
                                 <button id="restore-selected-pin-image" class="secondary-location-action" type="button" hidden>Przywróć zdjęcie</button>
                                 <button id="delete-selected-pin-image" class="danger-location-action" type="button">Usuń zdjęcie na stałe</button>
                             </div>
+                            <div id="selected-pin-image-owner-actions" class="selected-pin-image-owner-actions" hidden>
+                                <button id="delete-own-selected-pin-image" class="danger-location-action" type="button">Usuń swoje zdjęcie</button>
+                            </div>
                         </div>
 
                         <p id="selected-pin-description">
@@ -1004,6 +1007,10 @@
 
                     </div>
 
+
+                    <p id="pin-coordinate-lock-note" class="pin-coordinate-lock-note" hidden>
+                        Pinezka jest przypięta. Współrzędne są zablokowane dla wszystkich, również administratora. Aby ją przesunąć, administrator musi najpierw ją odpiąć.
+                    </p>
 
                     <div class="form-field">
 
@@ -1615,6 +1622,9 @@
                             <span>Współrzędna Z</span>
                             <input id="admin-location-z" name="z" type="number" step="any" placeholder="Opcjonalnie">
                         </label>
+                        <p id="admin-location-coordinate-lock-note" class="admin-coordinate-lock-note" hidden>
+                            Pinezka jest przypięta. Współrzędne są zablokowane również dla administratora. Aby ją przesunąć, najpierw ją odblokuj.
+                        </p>
                         <label class="admin-form-field admin-form-field-wide" for="admin-location-description">
                             <span>Opis</span>
                             <textarea id="admin-location-description" name="description" rows="3" maxlength="2000" placeholder="Dodatkowe wskazówki dotyczące znajdźki"></textarea>

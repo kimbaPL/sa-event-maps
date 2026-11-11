@@ -453,28 +453,43 @@ The UI must not write directly to localStorage.
     }
 
     async function deleteLocationImage(imageId) {
-        await requireAdmin();
-        const { data: image, error: imageError } = await supabase
-            .from("location_images")
-            .select("id, object_path")
-            .eq("id", imageId)
-            .maybeSingle();
-        if (imageError) throwDatabaseError("location_images", imageError);
-        if (!image) throw new Error("Nie znaleziono zdjęcia.");
+        if (!imageId) throw new Error("Brakuje identyfikatora zdjęcia.");
+        await getUserContext();
+
+        // Phase 1 locks the location's image slot and authorizes either the
+        // owning player (only while the location is unpinned) or an admin.
+        const { data: begun, error: beginError } = await supabase.rpc("begin_location_image_deletion", {
+            p_image_id: imageId
+        });
+        if (beginError) throwDatabaseError("begin_location_image_deletion", beginError);
+        const objectPath = begun?.object_path;
+        if (typeof objectPath !== "string" || !objectPath) {
+            throw new Error("Supabase nie zwrócił ścieżki zdjęcia do usunięcia.");
+        }
 
         const { error: storageError } = await supabase.storage
             .from(IMAGE_BUCKET)
-            .remove([image.object_path]);
+            .remove([objectPath]);
         if (storageError && !/not found|does not exist|404/i.test(storageError.message || "")) {
-            throwDatabaseError("Storage — trwałe usuwanie zdjęcia", storageError);
+            const retryError = new Error(
+                `Nie udało się usunąć pliku zdjęcia z prywatnego Storage. Slot zdjęcia został zabezpieczony. Spróbuj ponownie kliknąć „Usuń zdjęcie”, aby dokończyć operację. Szczegóły: ${storageError.message || "błąd Storage"}`
+            );
+            retryError.imageDeletionPending = true;
+            throw retryError;
         }
 
-        const { error: deleteError } = await supabase
-            .from("location_images")
-            .delete()
-            .eq("id", image.id);
-        if (deleteError) throwDatabaseError("location_images", deleteError);
-        return true;
+        // Phase 2 atomically removes metadata and unlocks the one-image slot.
+        const { data: finalized, error: finalizeError } = await supabase.rpc("finalize_location_image_deletion", {
+            p_image_id: imageId
+        });
+        if (finalizeError) {
+            const retryError = new Error(
+                `Plik został usunięty z Storage, ale nie udało się jeszcze zakończyć porządkowania metadanych. Ponów „Usuń zdjęcie”, aby dokończyć operację. Szczegóły: ${finalizeError.message || "błąd bazy danych"}`
+            );
+            retryError.imageDeletionPending = true;
+            throw retryError;
+        }
+        return finalized || true;
     }
 
     async function exportOrganizationBackup() {

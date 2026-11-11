@@ -3992,6 +3992,42 @@ textarea {
     flex: 1 1 130px;
 }
 
+.selected-pin-image-owner-actions {
+    display: flex;
+    width: 100%;
+}
+
+.selected-pin-image-owner-actions[hidden] {
+    display: none;
+}
+
+.selected-pin-image-owner-actions button {
+    width: 100%;
+}
+
+.pin-coordinate-lock-note,
+.admin-coordinate-lock-note {
+    margin: 8px 0 12px;
+    padding: 9px 11px;
+    border: 1px solid rgba(233, 191, 57, 0.28);
+    border-radius: 7px;
+    background: rgba(233, 191, 57, 0.07);
+    color: #d8c27b;
+    font-size: 10px;
+    line-height: 1.55;
+}
+
+.pin-coordinate-lock-note[hidden],
+.admin-coordinate-lock-note[hidden] {
+    display: none;
+}
+
+.pin-editor input:disabled,
+.admin-location-form input:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
 .location-image-upload-group {
     width: 100%;
     margin-top: 9px;
@@ -4775,4 +4811,83 @@ body.has-image-lightbox {
 .admin-help-format-toolbar button em {
     margin-right: 3px;
     color: var(--accent);
+}
+
+
+/* =========================================
+   FULL-SCREEN HELP AND RULES WORKSPACE
+   ========================================= */
+
+.help-workspace {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    min-height: 100vh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.help-workspace[hidden] {
+    display: none !important;
+}
+
+body.is-help-workspace {
+    overflow: hidden;
+}
+
+.help-workspace-main {
+    min-height: 100vh;
+}
+
+.help-workspace-topbar {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    backdrop-filter: blur(14px);
+}
+
+.help-workspace-content {
+    width: 100%;
+    max-width: 1480px;
+    margin: 0 auto;
+    padding: 34px 36px 52px;
+}
+
+.help-workspace-content .help-center {
+    margin: 0;
+}
+
+@media (max-width: 850px) {
+    .help-workspace-topbar {
+        min-height: 76px;
+        padding: 14px 18px;
+    }
+
+    .help-workspace-content {
+        padding: 22px 18px 38px;
+    }
+}
+
+@media (max-width: 560px) {
+    .help-workspace-topbar {
+        align-items: center;
+        gap: 10px;
+    }
+
+    .help-workspace-topbar .admin-back-button {
+        min-height: 36px;
+        padding: 0 10px;
+        font-size: 10px;
+    }
+
+    .help-workspace-content {
+        padding: 16px 12px 30px;
+    }
+
+    .help-workspace-content .help-center {
+        padding: 18px;
+    }
 }
