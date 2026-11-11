@@ -107,7 +107,7 @@ async function approveRequest(requestId: string) {
   redirectTo.searchParams.set("invite", "1");
 
   const { data: inviteData, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(email, {
-    data: { display_name: displayName },
+    data: { display_name: displayName, sa_event_maps_access_pending: true },
     redirectTo: redirectTo.toString(),
   });
 
@@ -416,7 +416,7 @@ Deno.serve(async (request: Request) => {
   try {
     const { user } = await requireAdmin(request);
     const body = await request.json().catch(() => ({}));
-    const action = String(body?.action ?? "");
+    const action = String(body?.action ?? "").replace(/-/g, "_");
 
     if (action === "approve_request") {
       const result = await approveRequest(String(body?.requestId ?? ""));

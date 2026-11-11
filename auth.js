@@ -58,12 +58,61 @@ AUTHENTICATION SYSTEM
 
     let mode = "login";
 let busy = false;
+let sessionApplySequence = 0;
 
 const RECOVERY_STORAGE_KEY =
     "sa-event-maps.password-recovery";
 
 let recoveryModeActive =
     sessionStorage.getItem(RECOVERY_STORAGE_KEY) === "true";
+
+// The map may only bootstrap after this module has verified the account
+// through the database-side access-status RPC.
+window.saEventMapsAccessState = {
+    ready: false,
+    active: false,
+    pendingInvite: false,
+    recovery: false
+};
+
+function publishAccessState({ active = false, pendingInvite = false, recovery = false } = {}) {
+    const state = {
+        ready: true,
+        active: Boolean(active),
+        pendingInvite: Boolean(pendingInvite),
+        recovery: Boolean(recovery)
+    };
+
+    window.saEventMapsAccessState = state;
+    window.dispatchEvent(new CustomEvent("sa-event-maps:access-state", {
+        detail: state
+    }));
+}
+
+function isInviteCallbackUrl() {
+    const query = new URLSearchParams(window.location.search);
+    const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    return query.get("invite") === "1" ||
+        query.get("type") === "invite" ||
+        hash.get("type") === "invite";
+}
+
+function clearAuthCallbackUrl() {
+    window.history.replaceState(
+        window.history.state,
+        document.title,
+        window.location.origin + window.location.pathname
+    );
+}
+
+function showBlockedAuthScreen() {
+    appShell.inert = true;
+    appShell.setAttribute("aria-hidden", "true");
+    screen.hidden = false;
+    document.body.removeAttribute("data-auth-role");
+    window.saEventMapsUser = null;
+    byId("auth-user-control")?.remove();
+}
 
 
     // ================================================
@@ -103,9 +152,9 @@ let recoveryModeActive =
         fields.confirmGroup.hidden =
             mode !== "update";
 
-        fields.modeSwitch.hidden =
-            mode === "recovery" ||
-            mode === "update";
+        // Public registration is disabled for this organization. New members
+        // enter through the separate request-and-invitation flow only.
+        fields.modeSwitch.hidden = true;
 
         fields.forgot.hidden =
             mode !== "login";
@@ -202,28 +251,10 @@ let recoveryModeActive =
 // ================================================
 
 function showRecoveryForm() {
-
-    appShell.inert = true;
-
-    appShell.setAttribute(
-        "aria-hidden",
-        "true"
-    );
-
-    screen.hidden = false;
-
-    document.body.removeAttribute("data-auth-role");
-
-    window.saEventMapsUser = null;
-
-    byId("auth-user-control")?.remove();
-
+    showBlockedAuthScreen();
     setMode("update");
-
-    setStatus(
-        "Wprowadź nowe hasło do swojego konta."
-    );
-
+    setStatus("Wprowadź nowe hasło do swojego konta.");
+    publishAccessState({ active: false, recovery: true });
 }
 
 
@@ -314,140 +345,120 @@ function showRecoveryForm() {
     // ================================================
 
     async function applySession(session) {
+        const sequence = ++sessionApplySequence;
 
-    if (!session || !session.user) {
+        if (!session || !session.user) {
+            const wasRecoveryMode = recoveryModeActive;
+            const wasInviteReturn = isInviteCallbackUrl();
 
-        const wasRecoveryMode = recoveryModeActive;
+            recoveryModeActive = false;
+            sessionStorage.removeItem(RECOVERY_STORAGE_KEY);
 
-        recoveryModeActive = false;
+            showBlockedAuthScreen();
+            setMode("login");
 
-        sessionStorage.removeItem(
-            RECOVERY_STORAGE_KEY
+            if (wasRecoveryMode) {
+                setStatus("Sesja odzyskiwania hasła wygasła. Poproś o nowy link.", "error");
+            } else if (wasInviteReturn) {
+                setStatus("Nie udało się potwierdzić sesji zaproszenia. Link mógł wygasnąć. Poproś administrację o ponowne wysłanie zaproszenia.", "error");
+            }
+
+            publishAccessState({ active: false });
+            return;
+        }
+
+        // A password-recovery session never grants map access until its own
+        // password-update flow completes and this function runs again.
+        if (recoveryModeActive) {
+            showRecoveryForm();
+            return;
+        }
+
+        setStatus("Sprawdzanie uprawnień konta...");
+
+        const { data: accessStatus, error: accessError } = await supabase.rpc(
+            "get_my_access_status"
         );
 
-        appShell.inert = true;
+        if (sequence !== sessionApplySequence) return;
 
-        appShell.setAttribute("aria-hidden", "true");
-
-        screen.hidden = false;
-
-        document.body.removeAttribute("data-auth-role");
-
-        window.saEventMapsUser = null;
-
-        byId("auth-user-control")?.remove();
-
-        setMode("login");
-
-        if (wasRecoveryMode) {
-
+        if (accessError || !accessStatus) {
+            console.error("SA Event Maps: Nie udało się zweryfikować dostępu.", accessError);
+            showBlockedAuthScreen();
+            setMode("login");
             setStatus(
-                "Sesja odzyskiwania hasła wygasła. Poproś o nowy link.",
+                "Nie udało się zweryfikować uprawnień konta. Mapa pozostaje zablokowana. Spróbuj ponownie lub skontaktuj się z administracją.",
                 "error"
             );
-
+            publishAccessState({ active: false });
+            return;
         }
 
-        return;
+        if (accessStatus.is_active !== true) {
+            showBlockedAuthScreen();
+            setMode("login");
 
-    }
+            if (accessStatus.is_invited === true) {
+                // admin-panel.js owns the dedicated invitation-password form.
+                // This module deliberately keeps the app inert and the map blocked.
+                fields.modeSwitch.hidden = true;
+                fields.forgot.hidden = true;
+                fields.back.hidden = true;
+                setStatus("Zaproszenie zostało potwierdzone. Ustaw hasło w formularzu aktywacji, aby uzyskać dostęp do mapy.");
+                publishAccessState({ active: false, pendingInvite: true });
+            } else {
+                setStatus("To konto nie ma aktywnego dostępu do mapy. Skontaktuj się z administracją.", "error");
+                publishAccessState({ active: false });
+            }
+            return;
+        }
 
+        const { data: profile, error: profileError } = await supabase
+            .from("profiles")
+            .select("id, display_name, role")
+            .eq("id", session.user.id)
+            .maybeSingle();
 
-    // Nie ukrywamy formularza podczas odzyskiwania hasła.
+        if (sequence !== sessionApplySequence) return;
 
-    if (recoveryModeActive) {
+        if (profileError || !profile) {
+            console.error("SA Event Maps: Nie udało się odczytać aktywnego profilu.", profileError);
+            showBlockedAuthScreen();
+            setMode("login");
+            setStatus(
+                "Konto ma sesję, ale nie udało się odczytać profilu. Mapa pozostaje zablokowana. Skontaktuj się z administratorem.",
+                "error"
+            );
+            publishAccessState({ active: false });
+            return;
+        }
 
-        showRecoveryForm();
+        window.saEventMapsUser = {
+            id: session.user.id,
+            email: session.user.email,
+            displayName: profile.display_name,
+            role: profile.role,
+            isAdmin: profile.role === "admin",
+            isActive: true
+        };
 
-        return;
+        document.body.dataset.authRole = profile.role;
+        renderUserControl(session.user, profile);
 
-    }
+        appShell.inert = false;
+        appShell.removeAttribute("aria-hidden");
+        screen.hidden = true;
 
+        if (isInviteCallbackUrl()) {
+            clearAuthCallbackUrl();
+        }
 
-    setStatus("Sprawdzanie profilu użytkownika...");
+        publishAccessState({ active: true });
 
-
-    const { data: profile, error } = await supabase
-
-        .from("profiles")
-
-        .select("id, display_name, role")
-
-        .eq("id", session.user.id)
-
-        .maybeSingle();
-
-
-    // Zabezpieczenie przed ukryciem formularza,
-    // jeżeli tryb odzyskiwania uruchomił się
-    // podczas pobierania profilu.
-
-    if (recoveryModeActive) {
-
-        showRecoveryForm();
-
-        return;
-
-    }
-
-
-    if (error || !profile) {
-
-        console.error(
-            "SA Event Maps: Nie udało się odczytać profilu.",
-            error
-        );
-
-        setStatus(
-            "Zalogowano, ale nie udało się odczytać profilu. Skontaktuj się z administratorem.",
-            "error"
-        );
-
-        return;
-
-    }
-
-
-    window.saEventMapsUser = {
-
-        id: session.user.id,
-
-        email: session.user.email,
-
-        displayName: profile.display_name,
-
-        role: profile.role,
-
-        isAdmin: profile.role === "admin"
-
-    };
-
-
-    document.body.dataset.authRole =
-        profile.role;
-
-
-    renderUserControl(
-        session.user,
-        profile
-    );
-
-
-    appShell.inert = false;
-
-    appShell.removeAttribute("aria-hidden");
-
-    screen.hidden = true;
-
-
-    console.info(
-        "SA Event Maps: Użytkownik zalogowany.",
-        {
+        console.info("SA Event Maps: Użytkownik zalogowany i aktywny.", {
             role: profile.role
-        }
-    );
-
-}
+        });
+    }
 
 
     // ================================================
@@ -641,27 +652,16 @@ function showRecoveryForm() {
 }
 
 
-// Odzyskiwanie hasła zostało zakończone.
-
+// Zakończenie odzyskiwania hasła. Dostęp do mapy jest
+// ponownie sprawdzany przez bazę przed pokazaniem aplikacji.
 recoveryModeActive = false;
-
-sessionStorage.removeItem(
-    RECOVERY_STORAGE_KEY
-);
-
+sessionStorage.removeItem(RECOVERY_STORAGE_KEY);
 setMode("login");
+setStatus("Hasło zostało zmienione. Sprawdzanie dostępu do konta...", "success");
 
-setStatus(
-    "Hasło zostało zmienione. Możesz już korzystać z konta.",
-    "success"
-);
-
-
-                const { data } =
-                    await supabase.auth.getSession();
-
-
-                await applySession(data.session);
+const { data, error: sessionError } = await supabase.auth.getSession();
+if (sessionError) throw sessionError;
+await applySession(data.session);
 
             }
 
@@ -721,6 +721,11 @@ setStatus(
 
 supabase.auth.onAuthStateChange((event, session) => {
 
+    if (event === "USER_UPDATED" && busy && mode === "update") {
+        // The form handler will re-check the session after its password update.
+        return;
+    }
+
     if (event === "PASSWORD_RECOVERY") {
 
         recoveryModeActive = true;
@@ -763,6 +768,8 @@ supabase.auth.onAuthStateChange((event, session) => {
     // ================================================
 
     appShell.inert = true;
+    appShell.setAttribute("aria-hidden", "true");
+    screen.hidden = false;
 
 setMode(
     recoveryModeActive ? "update" : "login"

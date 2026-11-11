@@ -839,37 +839,7 @@ UUIDs are internal only. No visible location numbering.
     }
 
     // ================================================
-    // 6. REFERENCE POINTS (TEMPORARY)
-    // ================================================
-
-    // These four reference points are temporary calibration aids.
-    // Remove them before the public release, after final calibration verification.
-
-    const referencePins = [
-        {
-            id: "P1",
-            name: "Punkt kontrolny — San Fierro",
-            world: { x: -2705.664, y: 376.153, z: 4.968 }
-        },
-        {
-            id: "P2",
-            name: "Punkt kontrolny — Las Venturas",
-            world: { x: 1088.348, y: 1073.993, z: 11 }
-        },
-        {
-            id: "P3",
-            name: "Punkt kontrolny — Los Santos",
-            world: { x: 1479.507, y: -1694.678, z: 14.047 }
-        },
-        {
-            id: "P4",
-            name: "Punkt kontrolny — Blueberry",
-            world: { x: 217.733, y: 11.723, z: 2.571 }
-        }
-    ];
-
-    // ================================================
-    // 7. DYNAMIC DETAIL CONTROLS
+    // 6. DYNAMIC DETAIL CONTROLS
     // ================================================
 
     let progressPanel = null;
@@ -987,15 +957,6 @@ UUIDs are internal only. No visible location numbering.
             heading.textContent = currentFilterId === "all"
                 ? "POSTĘP W KATALOGU"
                 : "POSTĘP W WYDARZENIU";
-        }
-
-        if (location.isReference) {
-            progressSelect.disabled = true;
-            needsCheckInput.disabled = true;
-            contextLabel.textContent = "Punkt kontrolny — nie jest znajdźką katalogową.";
-            help.textContent = "Punkty kontrolne nie mają zapisywanego postępu.";
-            elements.selectedStatus.textContent = "—";
-            return;
         }
 
         if (currentFilterId === "all") {
@@ -1631,17 +1592,7 @@ UUIDs are internal only. No visible location numbering.
         zoomAnimation: true
     });
 
-    const referenceLayer = L.layerGroup().addTo(map);
     const locationLayer = L.layerGroup().addTo(map);
-
-    function createReferenceIcon() {
-        return L.divIcon({
-            className: "sa-reference-marker",
-            html: '<div class="sa-reference-marker-core">R</div>',
-            iconSize: [28, 28],
-            iconAnchor: [14, 14]
-        });
-    }
 
     function createMarkerIcon(location) {
         const progress = currentFilterId === "all"
@@ -1669,24 +1620,6 @@ UUIDs are internal only. No visible location numbering.
             iconSize: [34, 42],
             iconAnchor: [17, 40],
             popupAnchor: [0, -36]
-        });
-    }
-
-    function addReferenceMarkers() {
-        referenceLayer.clearLayers();
-
-        referencePins.forEach(pin => {
-            const position = worldToLatLng(pin.world.x, pin.world.y);
-            if (!position) return;
-
-            const marker = L.marker(position, {
-                icon: createReferenceIcon(),
-                draggable: false,
-                title: pin.name
-            });
-
-            marker.addTo(referenceLayer);
-            marker.bindTooltip(escapeHTML(pin.name), { direction: "top" });
         });
     }
 
@@ -1843,28 +1776,25 @@ UUIDs are internal only. No visible location numbering.
                 ? "Nie podano"
                 : formatCoordinate(location.world.z);
 
-        const associatedEvents = location.isReference
-            ? []
-            : getEventsForLocation(location.id);
+        const associatedEvents = getEventsForLocation(location.id);
 
         elements.selectedEvents.textContent =
             associatedEvents.length
                 ? associatedEvents.map(event => event.name).join(", ")
                 : "Brak przypisań";
 
-        elements.deleteSelected.hidden = !isAdmin() || location.isReference || location.isArchived || location.isDeletionPending;
-        elements.deleteSelected.disabled = !isAdmin() || location.isReference || location.isArchived || location.isDeletionPending;
+        elements.deleteSelected.hidden = !isAdmin() || location.isArchived || location.isDeletionPending;
+        elements.deleteSelected.disabled = !isAdmin() || location.isArchived || location.isDeletionPending;
 
         ensureDetailActionButtons();
 
-        const canEdit = !location.isReference && canEditLocation(location);
+        const canEdit = canEditLocation(location);
         editLocationButton.hidden = !canEdit;
         editLocationButton.disabled = !canEdit;
 
         const isOwner = location.createdBy === currentUser?.id;
-        const canSeePermanentDelete = !location.isReference && (
-            isAdmin() || (isOwner && !location.isPinned && !location.isArchived)
-        );
+        const canSeePermanentDelete =
+            isAdmin() || (isOwner && !location.isPinned && !location.isArchived);
         const canDeleteAsOwner = isOwner && !location.isPinned && !location.isArchived &&
             (!location.isDeletionPending || location.deletionRequestedBy === currentUser?.id);
         permanentlyDeleteLocationButton.hidden = !canSeePermanentDelete;
@@ -1876,13 +1806,13 @@ UUIDs are internal only. No visible location numbering.
                 : "Trwale usuwa lokalizację, przypisania do wydarzeń, statusy wszystkich graczy i zdjęcie.";
 
         const canPinAsOwner = isOwner && !location.isPinned && !location.isArchived;
-        pinLocationButton.hidden = location.isReference || location.isArchived || location.isDeletionPending || (!isAdmin() && !canPinAsOwner);
+        pinLocationButton.hidden = location.isArchived || location.isDeletionPending || (!isAdmin() && !canPinAsOwner);
         pinLocationButton.disabled = location.isDeletionPending || (!isAdmin() && !canPinAsOwner);
         pinLocationButton.textContent = isAdmin()
             ? (location.isPinned ? "Odepnij pinezkę" : "Przypnij pinezkę")
             : "Zatwierdź i przypnij pinezkę";
 
-        if (progressPanel) progressPanel.hidden = Boolean(location.isReference);
+        if (progressPanel) progressPanel.hidden = false;
         void renderSelectedLocationImage(location.id);
         updateImageUploadAvailability();
 
@@ -1892,7 +1822,7 @@ UUIDs are internal only. No visible location numbering.
 
     async function toggleSelectedPin() {
         const location = getLocationById(selectedLocationId);
-        if (!location || location.isArchived || location.isDeletionPending || location.isReference) return;
+        if (!location || location.isArchived || location.isDeletionPending) return;
         if (!isAdmin() && (
             location.createdBy !== currentUser?.id || location.isPinned
         )) return;
@@ -1938,7 +1868,7 @@ UUIDs are internal only. No visible location numbering.
 
     async function permanentlyDeleteSelectedLocation() {
         const location = getLocationById(selectedLocationId);
-        if (!location || location.isReference) return;
+        if (!location) return;
 
         const isOwner = location.createdBy === currentUser?.id;
         if (!isAdmin() && (
@@ -2936,7 +2866,7 @@ UUIDs are internal only. No visible location numbering.
                 resetMapView();
 
                 mapReady = true;
-                addReferenceMarkers();
+                // Only catalog locations are rendered as map markers.
                 buildGrid();
                 setGridVisibility(false);
 
@@ -2979,6 +2909,16 @@ UUIDs are internal only. No visible location numbering.
             setEditorStatus("Pobieranie katalogu ze wspólnej bazy danych...");
 
             try {
+                const { data: accessStatus, error: accessError } = await supabase.rpc(
+                    "get_my_access_status"
+                );
+                if (accessError) throw accessError;
+                if (accessStatus?.is_active !== true) {
+                    clearCloudState();
+                    updateStorageStatus("Konto nie ma aktywnego dostępu do mapy", false);
+                    return;
+                }
+
                 const catalog = await dataApi.loadCatalog();
 
                 currentUser = catalog.user;
@@ -3091,14 +3031,18 @@ UUIDs are internal only. No visible location numbering.
         }, 0);
     });
 
-    supabase.auth.onAuthStateChange((event, session) => {
-        window.setTimeout(() => {
-            if (session && event !== "PASSWORD_RECOVERY") {
-                void bootstrapFromSupabase();
-            } else if (!session) {
-                clearCloudState();
-            }
-        }, 0);
+    function handleAccessStateChange(state) {
+        if (!state || state.ready !== true) return;
+
+        if (state.active === true) {
+            void bootstrapFromSupabase();
+        } else {
+            clearCloudState();
+        }
+    }
+
+    window.addEventListener("sa-event-maps:access-state", event => {
+        handleAccessStateChange(event.detail);
     });
 
     // ================================================
@@ -3116,23 +3060,13 @@ UUIDs are internal only. No visible location numbering.
 
     loadMapImage();
 
-    supabase.auth.getSession()
-        .then(({ data, error }) => {
-            if (error) {
-                throw error;
-            }
-
-            if (data?.session) {
-                void bootstrapFromSupabase();
-            } else {
-                updateStorageStatus("Zaloguj się, aby wczytać katalog", true);
-                setEditorStatus("Po zalogowaniu aplikacja pobierze wspólny katalog z Supabase.");
-            }
-        })
-        .catch(error => {
-            console.error("SA Event Maps: Nie udało się sprawdzić sesji.", error);
-            updateStorageStatus("Błąd sesji Supabase", false);
-        });
+    const initialAccessState = window.saEventMapsAccessState;
+    if (initialAccessState?.ready === true) {
+        handleAccessStateChange(initialAccessState);
+    } else {
+        updateStorageStatus("Sprawdzanie dostępu do mapy...", true);
+        setEditorStatus("Dostęp do wspólnego katalogu zostanie sprawdzony po weryfikacji konta.");
+    }
 
     clearSelectedLocation();
     updateGlobalCounters();

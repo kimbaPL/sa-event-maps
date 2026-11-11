@@ -368,51 +368,141 @@ functions or the admin-only data layer. This module owns only UI.
         const queryType = url.searchParams.get("type");
         const isInviteLink = url.searchParams.get("invite") === "1" || queryType === "invite" || hashParams.get("type") === "invite";
         let invitationMode = isInviteLink;
+        let inviteSessionEstablished = false;
+
+        let inviteCheckPromise = null;
+
+        const clearInviteCallbackUrl = () => {
+            url.searchParams.delete("invite");
+            url.searchParams.delete("type");
+            url.searchParams.delete("token_hash");
+            url.searchParams.delete("code");
+            url.hash = "";
+            window.history.replaceState({}, document.title, `${url.pathname}${url.search}`);
+        };
 
         const finishInvite = async session => {
-            if (!invitationMode || !session) return;
-            showInviteView();
-            setStatus(inviteStatus, "Zaproszenie potwierdzone. Ustaw teraz hasło do konta.", "success");
+            if (!session) return;
+            if (inviteCheckPromise) return inviteCheckPromise;
+
+            inviteCheckPromise = (async () => {
+                const { data: accessStatus, error: accessError } = await supabase.rpc(
+                    "get_my_access_status"
+                );
+                if (accessError) throw accessError;
+
+                if (accessStatus?.is_active === true) {
+                    // Active accounts never see the invitation password form.
+                    inviteSessionEstablished = false;
+                    invitationMode = false;
+                    inviteForm.hidden = true;
+                    inviteView.hidden = true;
+                    authForm.hidden = false;
+                    requestView.hidden = true;
+                    if (isInviteLink) clearInviteCallbackUrl();
+                    return;
+                }
+
+                if (accessStatus?.is_invited === true) {
+                    // This also handles an invited user who returns later by
+                    // signing in, after the original callback URL was cleared.
+                    inviteSessionEstablished = true;
+                    invitationMode = true;
+                    showInviteView();
+                    inviteForm.hidden = false;
+                    setStatus(
+                        inviteStatus,
+                        "Twoje zaproszenie oczekuje na dokończenie. Ustaw hasło, aby aktywować konto i uzyskać dostęp do mapy.",
+                        "success"
+                    );
+                    return;
+                }
+
+                inviteSessionEstablished = false;
+                if (invitationMode || isInviteLink) {
+                    showInviteView();
+                    inviteForm.hidden = true;
+                    setStatus(
+                        inviteStatus,
+                        "To konto nie ma oczekującego zaproszenia. Poproś administrację o sprawdzenie zgłoszenia.",
+                        "error"
+                    );
+                }
+            })();
+
+            try {
+                await inviteCheckPromise;
+            } catch (error) {
+                console.error("SA Event Maps: Nie udało się zweryfikować zaproszenia.", error);
+                if (invitationMode || isInviteLink) {
+                    showInviteView();
+                    inviteForm.hidden = true;
+                    setStatus(
+                        inviteStatus,
+                        error.message || "Nie udało się zweryfikować zaproszenia. Poproś administrację o sprawdzenie.",
+                        "error"
+                    );
+                }
+            } finally {
+                inviteCheckPromise = null;
+            }
         };
 
         supabase.auth.onAuthStateChange((event, session) => {
-            if (invitationMode && session && ["SIGNED_IN", "INITIAL_SESSION", "TOKEN_REFRESHED"].includes(event)) {
-                // auth.js may normally dismiss the login screen after SIGNED_IN;
-                // keep this dedicated password setup screen visible until complete.
-                void finishInvite(session);
+            if (session && ["SIGNED_IN", "INITIAL_SESSION", "TOKEN_REFRESHED", "USER_UPDATED"].includes(event)) {
+                window.setTimeout(() => void finishInvite(session), 0);
+            } else if (!session && inviteSessionEstablished) {
+                inviteSessionEstablished = false;
+                invitationMode = false;
+                showLoginView();
+                setStatus(
+                    authStatus,
+                    "Sesja aktywacji została zakończona. Jeśli hasło zostało już ustawione, zaloguj się ponownie — formularz aktywacji pojawi się ponownie. Jeśli nie, poproś administrację o ponowne wysłanie zaproszenia.",
+                    "error"
+                );
             }
         });
 
         if (isInviteLink) {
             showInviteView();
-            (async () => {
-                try {
-                    const tokenHash = url.searchParams.get("token_hash");
-                    if (tokenHash && (queryType === "invite" || !queryType)) {
-                        const { error: verifyError } = await supabase.auth.verifyOtp({
-                            token_hash: tokenHash,
-                            type: "invite"
-                        });
-                        if (verifyError) throw verifyError;
-                    }
+            inviteForm.hidden = true;
+            setStatus(inviteStatus, "Weryfikowanie zaproszenia...", "info");
+        }
 
-                    const { data, error } = await supabase.auth.getSession();
-                    if (error) throw error;
-                    if (data?.session) {
-                        await finishInvite(data.session);
-                    } else {
-                        setStatus(
-                            inviteStatus,
-                            "Nie udało się potwierdzić sesji z zaproszenia. Link mógł wygasnąć. Poproś administrację o ponowne wysłanie zaproszenia.",
-                            "error"
-                        );
-                    }
-                } catch (error) {
-                    console.error("SA Event Maps: Nie udało się rozpocząć aktywacji zaproszenia.", error);
+        // Also inspect an existing session on every page load. An invitee may
+        // return after closing the email callback or after the callback URL was
+        // already cleaned from the address bar.
+        (async () => {
+            try {
+                const tokenHash = url.searchParams.get("token_hash");
+                if (isInviteLink && tokenHash && (queryType === "invite" || !queryType)) {
+                    const { error: verifyError } = await supabase.auth.verifyOtp({
+                        token_hash: tokenHash,
+                        type: "invite"
+                    });
+                    if (verifyError) throw verifyError;
+                }
+
+                const { data, error } = await supabase.auth.getSession();
+                if (error) throw error;
+                if (data?.session) {
+                    await finishInvite(data.session);
+                } else if (isInviteLink) {
+                    setStatus(
+                        inviteStatus,
+                        "Nie udało się potwierdzić sesji z zaproszenia. Link mógł wygasnąć. Poproś administrację o ponowne wysłanie zaproszenia.",
+                        "error"
+                    );
+                }
+            } catch (error) {
+                console.error("SA Event Maps: Nie udało się rozpocząć aktywacji zaproszenia.", error);
+                if (isInviteLink || invitationMode) {
+                    showInviteView();
+                    inviteForm.hidden = true;
                     setStatus(inviteStatus, error.message || "Link zaproszenia jest nieprawidłowy lub wygasł.", "error");
                 }
-            })();
-        }
+            }
+        })();
 
         inviteForm.addEventListener("submit", async event => {
             event.preventDefault();
@@ -435,15 +525,25 @@ functions or the admin-only data layer. This module owns only UI.
                 if (sessionError) throw sessionError;
                 if (!sessionData?.session) throw new Error("Sesja zaproszenia wygasła. Poproś administrację o ponowne wysłanie zaproszenia.");
 
-                const { error } = await supabase.auth.updateUser({ password });
-                if (error) throw error;
+                const { error: passwordError } = await supabase.auth.updateUser({ password });
+                if (passwordError) throw passwordError;
 
-                setStatus(inviteStatus, "Hasło zostało ustawione. Otwieranie mapy...", "success");
+                setStatus(inviteStatus, "Hasło zapisane. Aktywowanie dostępu do mapy...", "info");
+
+                const { data: activationResult, error: activationError } = await supabase.rpc(
+                    "activate_my_invited_account"
+                );
+                if (activationError) {
+                    throw new Error(`Hasło zostało zapisane, ale nie udało się aktywować konta. Nie zamykaj tej strony; spróbuj ponownie. ${activationError.message}`);
+                }
+                if (activationResult?.activated !== true) {
+                    throw new Error("Hasło zostało zapisane, ale baza nie potwierdziła aktywacji konta. Spróbuj ponownie lub skontaktuj się z administracją.");
+                }
+
+                setStatus(inviteStatus, "Konto zostało aktywowane. Otwieranie mapy...", "success");
                 invitationMode = false;
-                url.searchParams.delete("invite");
-                url.searchParams.delete("type");
-                url.searchParams.delete("token_hash");
-                window.history.replaceState({}, document.title, `${url.pathname}${url.search}`);
+                inviteForm.reset();
+                clearInviteCallbackUrl();
                 window.location.reload();
             } catch (error) {
                 console.error("SA Event Maps: Nie udało się ustawić hasła zaproszonego konta.", error);

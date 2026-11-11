@@ -2327,25 +2327,6 @@ textarea {
     filter: grayscale(0.8);
 }
 
-.sa-reference-marker {
-    background: transparent !important;
-    border: 0 !important;
-}
-
-.sa-reference-marker-core {
-    width: 28px;
-    height: 28px;
-    display: grid;
-    place-items: center;
-    border: 3px solid #eafff5;
-    border-radius: 50%;
-    background: #65d6a3;
-    color: #07131d;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.42);
-    font-size: 9px;
-    font-weight: 900;
-}
-
 .progress-editor {
     margin: 0 20px 17px;
     padding: 15px;
