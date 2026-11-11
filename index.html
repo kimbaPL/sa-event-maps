@@ -563,10 +563,10 @@
                         type="number"
                         min="0"
                         step="1"
-                        placeholder="Np. 180"
+                        placeholder="Podaj liczbę znajdziek."
                     >
                     <span class="field-hint">
-                        Opcjonalna wartość używana w liczniku postępu, np. 35 / 180.
+                        
                     </span>
                 </div>
 
@@ -1683,7 +1683,7 @@
                 <div id="admin-locations-list" class="admin-record-list">
                     <div class="admin-empty-state">Otwórz sekcję, aby pobrać lokalizacje.</div>
                 </div>
-                <p class="admin-panel-note">Archiwizacja lokalizacji jest globalna — ukrywa pinezkę we wszystkich wydarzeniach. Trwałe usunięcie jest możliwe wyłącznie wtedy, gdy lokalizacja nie ma przypisań do wydarzeń ani zapisanych postępów graczy.</p>
+                <p class="admin-panel-note"></p>
             </section>
             <!-- ORGANIZATION BACKUP AND RESTORE -->
             <section class="admin-view" data-admin-view="backup" aria-labelledby="admin-backup-title" hidden>
@@ -1744,7 +1744,7 @@
                         <li><strong>Historia aktywności:</strong> kopia obejmuje dziennik activity_log. Przywracanie dopisuje również nowe wpisy opisujące operacje wykonane podczas odtwarzania.</li>
                         <li><strong>Pliki galerii:</strong> pełna kopia obejmuje metadane oraz binarną zawartość zdjęć z Supabase Storage, również zarchiwizowanych. Limit pojedynczej kopii wynosi 100 MiB.</li>
                         <li><strong>Instrukcje i regulamin:</strong> pełna kopia obejmuje wszystkie rozdziały obu dokumentów, w tym nieopublikowane szkice.</li>
-                        <li><strong>Integralność i przechowywanie:</strong> suma SHA-256 wykrywa przypadkowe zmiany pliku, ale nie szyfruje go ani nie jest podpisem kryptograficznym. Plik zawiera prywatne dane — przechowuj go w bezpiecznym miejscu i nie udostępniaj osobom nieupoważnionym.</li>
+                        <li><strong>Integralność i przechowywanie:</strong> suma SHA-256 wykrywa przypadkowe zmiany pliku, ale nie szyfruje go ani nie jest podpisem kryptograficznym. Plik zawiera prywatne dane - przechowuj go w bezpiecznym miejscu i nie udostępniaj osobom nieupoważnionym.</li>
                     </ul>
                 </div>
             </section>
@@ -1754,8 +1754,8 @@
                 <article class="admin-settings-card">
                     <div class="admin-settings-card-heading">
                         <div>
-                            <h3>Galeria zdjęć znajdziek</h3>
-                            <p>Kontrola możliwości dodawania nowych screenshotów przez graczy.</p>
+                            <h3>Galeria zdjęć</h3>
+                            <p>Kontrola możliwości dodawania nowych zdjęć przez graczy.</p>
                         </div>
                         <label class="admin-switch" for="admin-block-player-image-uploads">
                             <input id="admin-block-player-image-uploads" type="checkbox">
@@ -1765,7 +1765,7 @@
                     </div>
                     <div class="admin-settings-toggle-copy">
                         <strong>Zablokuj możliwość wysyłania zdjęć</strong>
-                        <p>Po włączeniu gracze nie będą mogli dodawać nowych zdjęć. Nie wpłynie to na zdjęcia już dołączone do znajdziek — pozostaną widoczne. Administratorzy nadal mogą zarządzać galerią.</p>
+                        <p>Po włączeniu gracze nie będą mogli dodawać nowych zdjęć. Nie wpłynie to na zdjęcia już dołączone do znajdziek.</p>
                     </div>
                     <div id="admin-image-settings-status" class="admin-panel-status" role="status" aria-live="polite">Ustawienia zostaną pobrane po otwarciu tej sekcji.</div>
                 </article>
@@ -1850,7 +1850,7 @@
         <div class="eyebrow">POTWIERDZENIE OPERACJI</div>
         <h2 id="clear-catalog-progress-title">Usunąć wszystkie postępy?</h2>
         <p id="clear-catalog-progress-description">
-            Czy na pewno chcesz wyczyścić wszystkie swoje statusy znajdziek w katalogu „Wszystkie respy”?
+            Czy na pewno chcesz wyczyścić wszystkie swoje statusy znajdziek w katalogu „Wszystkie respy znajdziek”?
         </p>
         <div class="catalog-progress-reset-warning">
             Operacja usunie wyłącznie Twoje statusy katalogowe, w tym oznaczenia „Znaleziono”, „Nie ma”, „Niepewne” i „Do sprawdzenia”. Nie usunie pinezek, zdjęć ani opisów i nie zmieni postępów w żadnym wydarzeniu.

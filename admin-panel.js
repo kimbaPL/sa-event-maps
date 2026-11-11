@@ -757,7 +757,7 @@ functions or the admin-only data layer. This module owns only UI.
             blockPlayerImageUploadsToggle.checked = !settings.allowPlayerUploads;
             setImageSettingsStatus(
                 settings.allowPlayerUploads
-                    ? "Gracze mogą dodawać po jednym zdjęciu do nowych lub własnych nieprzypiętych znajdziek."
+                    ? "Gracze mogą dodawać po jednym zdjęciu do własnych nieprzypiętych znajdziek."
                     : "Dodawanie nowych zdjęć przez graczy jest zablokowane. Istniejące zdjęcia pozostają widoczne.",
                 "success"
             );
@@ -1887,7 +1887,7 @@ functions or the admin-only data layer. This module owns only UI.
         locationImageFileInput.disabled = Boolean(location);
         locationImageFileStatus.textContent = location
             ? "Sprawdzanie, czy znajdźka ma już zdjęcie…"
-            : "Opcjonalnie — jedno zdjęcie na znajdźkę. Zostanie automatycznie skompresowane do WebP.";
+            : "Zdjęcia są całkowicie opcjonalne. Zostanie automatycznie skompresowane do WebP.";
         locationReturnEventId = location ? null : assignToEventId;
         locationFormTitle.textContent = location
             ? "Edytuj znajdźkę"
@@ -2377,7 +2377,7 @@ functions or the admin-only data layer. This module owns only UI.
         const file = locationImageFileInput.files?.[0];
         locationImageFileStatus.textContent = file
             ? `Wybrano: ${file.name}. Zostanie skompresowane przed wysłaniem.`
-            : "Opcjonalnie — jedno zdjęcie na znajdźkę. Zostanie automatycznie skompresowane do WebP.";
+            : "Opcjonalne zdjęcie. Zostanie automatycznie skompresowane do WebP.";
     });
     locationSearchInput.addEventListener("input", renderLocations);
     locationFilter.addEventListener("change", renderLocations);

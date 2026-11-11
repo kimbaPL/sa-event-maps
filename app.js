@@ -1257,7 +1257,7 @@ UUIDs are internal only. No visible location numbering.
         elements.eventEditorStatus.textContent =
             mode === "edit"
                 ? "Zmień informacje o wydarzeniu i zapisz."
-                : "Wpisz nazwę, opis oraz opcjonalną oficjalną liczbę znajdziek.";
+                : "Wpisz nazwę i opis.";
 
         elements.eventName.focus();
     }
@@ -2687,7 +2687,7 @@ UUIDs are internal only. No visible location numbering.
             empty.className = "help-document-empty";
             empty.textContent = activeHelpDocumentType === "instructions"
                 ? "Instrukcja jest obecnie przygotowywana przez administratora."
-                : "Regulamin nie został jeszcze opublikowany. Administrator może go uzupełnić w panelu administracyjnym.";
+                : "Regulamin jest obecnie przygotowywany przez administratora.";
             content.appendChild(empty);
             status.textContent = "Nie ma obecnie opublikowanych rozdziałów tej części.";
             return;
