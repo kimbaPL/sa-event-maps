@@ -670,6 +670,22 @@ The UI must not write directly to localStorage.
         return context;
     }
 
+    async function getProfileDisplayName(profileId) {
+        if (typeof profileId !== "string" || !profileId) return null;
+
+        // The location stores only created_by (profile ID), never a copied
+        // nickname. Resolve the public display name from the live profile row.
+        await getUserContext();
+        const { data, error } = await supabase
+            .from("profiles")
+            .select("display_name")
+            .eq("id", profileId)
+            .maybeSingle();
+
+        if (error) throwDatabaseError("profiles", error);
+        return data?.display_name || null;
+    }
+
     async function updateMyDisplayName(displayName) {
         const user = await getUserContext();
         const name = String(displayName || "").trim();
@@ -1648,6 +1664,7 @@ The UI must not write directly to localStorage.
 
     window.saEventMapsData = Object.freeze({
         getUserContext,
+        getProfileDisplayName,
         updateMyDisplayName,
         loadCatalog,
         exportOrganizationBackup,

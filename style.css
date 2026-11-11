@@ -506,6 +506,18 @@ textarea {
     background: rgba(237, 119, 119, 0.1);
 }
 
+.danger-event-action {
+    border-color: rgba(237, 119, 119, 0.42) !important;
+    background: rgba(237, 119, 119, 0.09) !important;
+    color: #f09a9a !important;
+}
+
+.danger-event-action:not(:disabled):hover {
+    border-color: rgba(237, 119, 119, 0.72) !important;
+    background: rgba(237, 119, 119, 0.17) !important;
+    color: #ffc0c0 !important;
+}
+
 
 /* =========================================
    EVENT EDITOR

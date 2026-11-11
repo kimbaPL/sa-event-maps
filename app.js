@@ -114,6 +114,7 @@ UUIDs are internal only. No visible location numbering.
         createEvent: byId("create-event"),
         editEvent: byId("edit-event"),
         deleteEvent: byId("delete-event"),
+        permanentlyDeleteEvent: byId("permanently-delete-event"),
 
         eventEditor: byId("event-editor"),
         eventEditorTitle: byId("event-editor-title"),
@@ -196,6 +197,7 @@ UUIDs are internal only. No visible location numbering.
 
     const detailFields = {
         area: byId("selected-pin-area"),
+        owner: byId("selected-pin-owner"),
         x: byId("selected-pin-x"),
         y: byId("selected-pin-y"),
         z: byId("selected-pin-z")
@@ -372,6 +374,10 @@ UUIDs are internal only. No visible location numbering.
                 const savedName = await dataApi.updateMyDisplayName(nextName);
                 currentUser.displayName = savedName;
                 refreshTopbarDisplayName();
+                const selectedLocation = getLocationById(selectedLocationId);
+                if (selectedLocation?.createdBy === currentUser.id) {
+                    detailFields.owner.textContent = savedName;
+                }
                 closeEditor();
                 status.textContent = "Pseudonim został zmieniony.";
                 status.classList.add("is-success");
@@ -1124,6 +1130,34 @@ UUIDs are internal only. No visible location numbering.
         }
     }
 
+    let ownerNameRequestToken = 0;
+
+    async function refreshLocationOwnerName(location) {
+        const token = ++ownerNameRequestToken;
+        if (!location?.createdBy) {
+            detailFields.owner.textContent = "Nieznany użytkownik";
+            return;
+        }
+
+        // Show the current user's live session name immediately. For other
+        // creators fetch the current profile name whenever the pin is opened.
+        if (location.createdBy === currentUser?.id) {
+            detailFields.owner.textContent = currentUser.displayName || "Nieznany użytkownik";
+            return;
+        }
+
+        detailFields.owner.textContent = "Ładowanie…";
+        try {
+            const displayName = await dataApi.getProfileDisplayName(location.createdBy);
+            if (token !== ownerNameRequestToken || selectedLocationId !== location.id) return;
+            detailFields.owner.textContent = displayName || "Nieznany użytkownik";
+        } catch (error) {
+            console.warn("SA Event Maps: Nie udało się pobrać pseudonimu właściciela znajdźki.", error);
+            if (token !== ownerNameRequestToken || selectedLocationId !== location.id) return;
+            detailFields.owner.textContent = "Nie udało się wczytać";
+        }
+    }
+
     // ================================================
     // 9. EVENT HELPERS AND SELECTORS
     // ================================================
@@ -1197,10 +1231,14 @@ UUIDs are internal only. No visible location numbering.
         elements.createEvent.hidden = !isAdmin();
         elements.editEvent.hidden = !isAdmin();
         elements.deleteEvent.hidden = !isAdmin();
+        elements.permanentlyDeleteEvent.hidden =
+            !isAdmin() || currentFilterId === "all" || !selectedEvent;
 
         elements.editEvent.disabled = !canManageEvent;
         elements.deleteEvent.disabled = !canManageEvent;
         elements.deleteEvent.textContent = "Archiwizuj event";
+        elements.permanentlyDeleteEvent.disabled =
+            !isAdmin() || currentFilterId === "all" || !selectedEvent;
 
         if (selectedEvent?.status === "archived") {
             elements.editEvent.disabled = true;
@@ -1369,6 +1407,49 @@ UUIDs are internal only. No visible location numbering.
         }
     }
 
+    async function permanentlyDeleteCurrentEvent() {
+        if (!isAdmin() || currentFilterId === "all") return;
+
+        const event = getEventById(currentFilterId);
+        if (!event) return;
+
+        const assignmentCount = database.eventLocations.filter(
+            item => item.eventId === event.id
+        ).length;
+        const accepted = window.confirm(
+            `Trwale usunąć wydarzenie „${event.name}”?\n\n` +
+            `Usunięte zostaną przypisania ${assignmentCount} znajdziek oraz wszystkie osobiste statusy graczy zapisane dla tego wydarzenia.\n\n` +
+            "Globalne pinezki, ich zdjęcia oraz osobiste postępy w „Wszystkich respach” pozostaną bez zmian.\n\n" +
+            "Tej operacji nie można cofnąć."
+        );
+        if (!accepted) return;
+
+        elements.permanentlyDeleteEvent.disabled = true;
+        elements.editEvent.disabled = true;
+        elements.deleteEvent.disabled = true;
+
+        try {
+            await dataApi.deleteEvent(event.id);
+
+            database.events = database.events.filter(item => item.id !== event.id);
+            database.eventLocations = database.eventLocations.filter(item => item.eventId !== event.id);
+            database.playerProgress = database.playerProgress.filter(item => item.eventId !== event.id);
+
+            if (editingEventId === event.id) closeEventEditor();
+            currentFilterId = "all";
+            renderApplication();
+            setEditorStatus(`Trwale usunięto wydarzenie „${event.name}”. Globalne lokalizacje i postępy katalogowe pozostały bez zmian.`);
+        } catch (error) {
+            console.error("SA Event Maps: Nie udało się trwale usunąć wydarzenia.", error);
+            setEditorStatus(error.message || "Nie udało się trwale usunąć wydarzenia.");
+        } finally {
+            const current = getEventById(currentFilterId);
+            elements.permanentlyDeleteEvent.disabled =
+                !isAdmin() || currentFilterId === "all" || !current;
+            renderEventSelectors();
+        }
+    }
+
     elements.createEvent.addEventListener("click", () => openEventEditor("create"));
     elements.editEvent.addEventListener("click", () => {
         const event = getEventById(currentFilterId);
@@ -1377,6 +1458,7 @@ UUIDs are internal only. No visible location numbering.
     elements.saveEvent.addEventListener("click", () => void saveEvent());
     elements.cancelEvent.addEventListener("click", closeEventEditor);
     elements.deleteEvent.addEventListener("click", () => void archiveCurrentEvent());
+    elements.permanentlyDeleteEvent.addEventListener("click", () => void permanentlyDeleteCurrentEvent());
 
     // ================================================
     // PERSONAL PROGRESS RESET — GLOBAL CATALOG ONLY
@@ -1753,6 +1835,7 @@ UUIDs are internal only. No visible location numbering.
         }
 
         detailFields.area.textContent = location.area || "Nie określono";
+        void refreshLocationOwnerName(location);
         detailFields.x.textContent = formatCoordinate(location.world.x);
         detailFields.y.textContent = formatCoordinate(location.world.y);
         detailFields.z.textContent =
