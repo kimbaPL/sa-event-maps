@@ -4891,3 +4891,102 @@ body.is-help-workspace {
         padding: 18px;
     }
 }
+
+
+/* =========================================
+   PROFILE DISPLAY NAME EDITOR (TOP BAR)
+   ========================================= */
+
+.auth-profile-name-editor {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 0;
+}
+
+.auth-profile-name-trigger,
+.auth-profile-name-form button {
+    min-height: 34px;
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: var(--surface-light);
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 700;
+    white-space: nowrap;
+    transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.auth-profile-name-trigger:hover,
+.auth-profile-name-form button:hover {
+    background: var(--surface-hover);
+    border-color: #42566a;
+    color: var(--text);
+}
+
+.auth-profile-name-form {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0;
+}
+
+.auth-profile-name-form[hidden] {
+    display: none !important;
+}
+
+.auth-profile-name-form input {
+    width: 150px;
+    min-width: 110px;
+    min-height: 34px;
+    padding: 7px 9px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    outline: none;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 11px;
+}
+
+.auth-profile-name-form input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(101, 214, 163, 0.12);
+}
+
+.auth-profile-name-form .auth-profile-name-save {
+    border-color: rgba(101, 214, 163, 0.35);
+    background: rgba(101, 214, 163, 0.12);
+    color: var(--accent);
+}
+
+.auth-profile-name-form .auth-profile-name-save:hover {
+    background: rgba(101, 214, 163, 0.2);
+    color: #a0f0c9;
+}
+
+.auth-profile-name-status {
+    flex-basis: 100%;
+    max-width: 260px;
+    color: var(--accent);
+    font-size: 10px;
+    line-height: 1.4;
+}
+
+.auth-profile-name-status.is-error {
+    color: var(--danger);
+}
+
+@media (max-width: 700px) {
+    .auth-profile-name-editor {
+        flex-basis: 100%;
+        justify-content: flex-start;
+        order: 0;
+    }
+
+    .auth-profile-name-form input {
+        width: min(150px, 38vw);
+    }
+}

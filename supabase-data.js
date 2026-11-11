@@ -670,6 +670,40 @@ The UI must not write directly to localStorage.
         return context;
     }
 
+    async function updateMyDisplayName(displayName) {
+        const user = await getUserContext();
+        const name = String(displayName || "").trim();
+        const nameLength = Array.from(name).length;
+
+        if (nameLength < 2 || nameLength > 80) {
+            throw new Error("Pseudonim musi mieć od 2 do 80 znaków.");
+        }
+
+        if (/[\u0000-\u001F\u007F]/.test(name)) {
+            throw new Error("Pseudonim nie może zawierać znaków sterujących.");
+        }
+
+        const { data, error } = await supabase.rpc("update_my_display_name", {
+            p_display_name: name
+        });
+
+        if (error) {
+            if (error.code === "23505" || /zajęt|duplicate key/i.test(error.message || "")) {
+                throw new Error("Ten pseudonim jest już zajęty. Wybierz inną nazwę.");
+            }
+            console.error("SA Event Maps: Nie udało się zmienić pseudonimu.", error);
+            throw new Error(error.message || "Nie udało się zmienić pseudonimu.");
+        }
+
+        const savedName = typeof data === "string" ? data : name;
+        user.displayName = savedName;
+        if (window.saEventMapsUser) {
+            window.saEventMapsUser.displayName = savedName;
+        }
+
+        return savedName;
+    }
+
     async function requireAdmin() {
         const user = await getUserContext();
 
@@ -1614,6 +1648,7 @@ The UI must not write directly to localStorage.
 
     window.saEventMapsData = Object.freeze({
         getUserContext,
+        updateMyDisplayName,
         loadCatalog,
         exportOrganizationBackup,
         previewOrganizationBackup,

@@ -239,6 +239,161 @@ UUIDs are internal only. No visible location numbering.
     let selectedLocationImage = null;
     let selectedImageRenderToken = 0;
 
+    // ================================================
+    // PROFILE DISPLAY NAME EDITOR (TOP BAR)
+    // ================================================
+
+    function refreshTopbarDisplayName() {
+        const nameElement = document.querySelector(
+            ".auth-user-control .auth-user-info strong"
+        );
+        if (nameElement && currentUser?.displayName) {
+            nameElement.textContent = currentUser.displayName;
+        }
+    }
+
+    function installTopbarDisplayNameEditor() {
+        const authControl = document.querySelector(".auth-user-control");
+        const userInfo = authControl?.querySelector(".auth-user-info");
+        const nameElement = userInfo?.querySelector("strong");
+
+        if (!authControl || !userInfo || !nameElement) return false;
+
+        if (authControl.querySelector(".auth-profile-name-editor")) {
+            refreshTopbarDisplayName();
+            return true;
+        }
+
+        const editor = document.createElement("div");
+        editor.className = "auth-profile-name-editor";
+
+        const changeButton = document.createElement("button");
+        changeButton.type = "button";
+        changeButton.className = "auth-profile-name-trigger";
+        changeButton.textContent = "Zmień nazwę";
+        changeButton.setAttribute("aria-expanded", "false");
+        changeButton.setAttribute("aria-label", "Zmień swój pseudonim");
+
+        const formElement = document.createElement("form");
+        formElement.className = "auth-profile-name-form";
+        formElement.hidden = true;
+
+        const nameInput = document.createElement("input");
+        nameInput.type = "text";
+        nameInput.maxLength = 80;
+        nameInput.minLength = 2;
+        nameInput.required = true;
+        nameInput.autocomplete = "nickname";
+        nameInput.placeholder = "Nowy pseudonim";
+        nameInput.setAttribute("aria-label", "Nowy pseudonim");
+
+        const saveButton = document.createElement("button");
+        saveButton.type = "submit";
+        saveButton.className = "auth-profile-name-save";
+        saveButton.textContent = "Zatwierdź";
+
+        const cancelButton = document.createElement("button");
+        cancelButton.type = "button";
+        cancelButton.className = "auth-profile-name-cancel";
+        cancelButton.textContent = "Anuluj";
+
+        const status = document.createElement("div");
+        status.className = "auth-profile-name-status";
+        status.hidden = true;
+        status.setAttribute("role", "status");
+        status.setAttribute("aria-live", "polite");
+
+        formElement.append(nameInput, saveButton, cancelButton);
+        editor.append(changeButton, formElement, status);
+        authControl.insertBefore(editor, userInfo);
+
+        const closeEditor = () => {
+            formElement.hidden = true;
+            changeButton.hidden = false;
+            changeButton.setAttribute("aria-expanded", "false");
+            nameInput.value = currentUser?.displayName || nameElement.textContent || "";
+            status.hidden = true;
+            status.textContent = "";
+            status.classList.remove("is-error", "is-success");
+            saveButton.disabled = false;
+            cancelButton.disabled = false;
+            nameInput.disabled = false;
+        };
+
+        changeButton.addEventListener("click", () => {
+            if (!currentUser) return;
+            nameInput.value = currentUser.displayName || nameElement.textContent || "";
+            status.hidden = true;
+            status.textContent = "";
+            status.classList.remove("is-error", "is-success");
+            changeButton.hidden = true;
+            formElement.hidden = false;
+            changeButton.setAttribute("aria-expanded", "true");
+            nameInput.focus();
+            nameInput.select();
+        });
+
+        cancelButton.addEventListener("click", closeEditor);
+
+        formElement.addEventListener("submit", async event => {
+            event.preventDefault();
+            const nextName = nameInput.value.trim();
+            const nextLength = Array.from(nextName).length;
+
+            status.hidden = true;
+            status.classList.remove("is-error", "is-success");
+
+            if (nextLength < 2 || nextLength > 80) {
+                status.textContent = "Pseudonim musi mieć od 2 do 80 znaków.";
+                status.classList.add("is-error");
+                status.hidden = false;
+                nameInput.focus();
+                return;
+            }
+
+            if (!currentUser || !dataReady) {
+                status.textContent = "Poczekaj, aż profil użytkownika zostanie wczytany.";
+                status.classList.add("is-error");
+                status.hidden = false;
+                return;
+            }
+
+            saveButton.disabled = true;
+            cancelButton.disabled = true;
+            nameInput.disabled = true;
+
+            try {
+                const savedName = await dataApi.updateMyDisplayName(nextName);
+                currentUser.displayName = savedName;
+                refreshTopbarDisplayName();
+                closeEditor();
+                status.textContent = "Pseudonim został zmieniony.";
+                status.classList.add("is-success");
+                status.hidden = false;
+            } catch (error) {
+                status.textContent = error.message || "Nie udało się zmienić pseudonimu.";
+                status.classList.add("is-error");
+                status.hidden = false;
+                nameInput.disabled = false;
+                saveButton.disabled = false;
+                cancelButton.disabled = false;
+                nameInput.focus();
+            }
+        });
+
+        refreshTopbarDisplayName();
+        return true;
+    }
+
+    function observeTopbarAccountControl() {
+        installTopbarDisplayNameEditor();
+
+        const observer = new MutationObserver(() => {
+            installTopbarDisplayNameEditor();
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+    }
+
     let imageWidth = 0;
     let imageHeight = 0;
     let imageBounds = null;
@@ -2728,6 +2883,8 @@ UUIDs are internal only. No visible location numbering.
                 const catalog = await dataApi.loadCatalog();
 
                 currentUser = catalog.user;
+                refreshTopbarDisplayName();
+                installTopbarDisplayNameEditor();
                 try {
                     const imageSettings = await dataApi.getImageUploadSettings();
                     imageUploadsEnabled = imageSettings.allowPlayerUploads;
@@ -2850,6 +3007,7 @@ UUIDs are internal only. No visible location numbering.
     // ================================================
 
     setupNavigation();
+    observeTopbarAccountControl();
     ensureProgressPanel();
     elements.useCoordinates.disabled = true;
 
